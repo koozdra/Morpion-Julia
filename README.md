@@ -1,3 +1,5 @@
-# Morpion-Julia
+# Morpion Solitaire Implemented in Julia
 
-very beta...
+[Morpion Solitaire](http://www.morpionsolitaire.com/)
+
+Work in progress
