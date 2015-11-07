@@ -131,8 +131,8 @@ function sync (index, searched, min_accept, name, load_visits)
 			end_searched[file_searchy.points_hash] = true
 			
 			if !haskey(index, file_searchy.points_hash) && !haskey(searched, file_searchy.points_hash) && file_searchy.score >= min_accept
-				println(file_searchy.score)
-				index[file_searchy.points_hash] = file_searchy
+				#println(file_searchy.score)
+				#index[file_searchy.points_hash] = file_searchy
 			end
 			
 			i += 1
@@ -248,13 +248,13 @@ function modificationrandsingle(morpion, visits)
 end
 
 
-function modification1(morpion, visits)
+function modification_rand_3(morpion, visits)
 	
 
 	morpion_dna = generate_dna(morpion)
-	for i in 1:3
+	#for i in 1:3
 		morpion_dna[dna_index(morpion.moves[rand(1:length(morpion.moves))])]	= -1
-	end
+	#end
 	
 	eval_dna(morpion_dna)
 end
@@ -360,7 +360,7 @@ end
 
 
 #parameters
-timeout_score_multiplier = 100
+timeout_score_multiplier = 10
 
 #i = -2 amazing
 
@@ -370,8 +370,8 @@ timeout_score_multiplier = 100
 #discover_reset = i
 
 i = -10
-index_accept = i
-discover_reset = -4
+index_accept = -3
+discover_reset = 0
 
 
 end_search_accept = -5
@@ -388,7 +388,7 @@ end_search_interval = 1000
 
 auto_end_search = -4
 
-max_index_length = 50000
+max_index_length = 40000
 forget_percent_save = 0.1
 
 max_index_score = 0
@@ -404,6 +404,10 @@ discovery_count = 0
 discovery_interval = 20
 
 min_score_end_search = 105
+
+offset = 0
+offset_incr = 1 / 1000
+
 
 
 
@@ -460,7 +464,9 @@ while true
 		#t = 1 + ((step % 1000) / 1000) * 1
 		
 		#t = 0.1 + ((step % 1000) / 1000) * 0.4
-		t = 1
+		
+		# the best
+		#t = 1
 #		if (step % 10 == 0)
 #			t = 2
 #		else
@@ -472,13 +478,21 @@ while true
 #		end
 		
 		
-		#t = 0.5
+		t = 2
+		bound_mult = 2
+		
 
 		sa = a.score-(a.visits/(a.score*t))
 		sb = b.score-(b.visits/(b.score*t)) 
 		
-#		sa = a.score-(a.visits/(a.score*t))
-#		sb = b.score-(b.visits/(b.score*t)) 
+		if (a.visits > a.score * bound_mult)
+			sa = 0
+		end
+
+		if (b.visits > b.score * bound_mult)
+			sb = 0
+		end
+
 		if sa > sb || sa == sb && randbool()
 			return a
 		else
@@ -493,6 +507,7 @@ while true
 		#t = rand(1.9:2.1)
 		#t = 1.1 + (rand() * 0.9)
 		# 1 amazing
+		# 4 climbs really well and gets stuck with 0 reset
 		t = 2
 		
 		sa = a.score-(a.visits/(a.score*t))
@@ -618,7 +633,14 @@ while true
 #		eval_morpion = modification(morpion, searchy.visits)
 #	end
 	
-	eval_morpion = modification(morpion, searchy.visits)
+	#eval_morpion = modification(morpion, searchy.visits)
+	if step & 1 == 0
+		eval_morpion = modification(morpion, searchy.visits)
+	else
+		eval_morpion = modification(morpion, searchy.visits + floor(searchy.score * offset))
+	end
+
+#	eval_morpion = modification(morpion, searchy.visits + floor(searchy.score * offset))
 	
 #	eval_morpion = modificationrandsingle(morpion, searchy.visits)
 	
@@ -983,6 +1005,12 @@ while true
 		
 	searchy.visits += 1
 	step += 1
+
+	#offset
+  offset += offset_incr
+  if offset > 1
+    offset = 0
+  end
 	
 
 end
@@ -1039,4 +1067,3 @@ while true
 	explore(index)
 	exploit(index)
 end
-
