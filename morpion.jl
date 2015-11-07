@@ -46,7 +46,7 @@ function isless(a::Move, b::Move)
 	a.x < b.x || a.y < b.y || a.start_x < b.start_x || a.start_y < b.start_y || a.direction < b.direction
 end
 
-function copy (move::Move)
+function copy(move::Move)
 	Move(move.x,move.y,move.start_x,move.start_y,move.direction)
 end
 
@@ -55,7 +55,7 @@ immutable Morpion
 end
 Morpion() = Morpion([])
 
-function copy (morpion::Morpion)
+function copy(morpion::Morpion)
 	Morpion(copy(morpion.moves))
 end
 
@@ -63,6 +63,17 @@ function score(morpion::Morpion)
 	length(morpion.moves)
 end
 
+function board_index(x::Number, y::Number)
+	(x + 15) * 40 + (y + 15)
+end
+
+function dna_index(x::Number, y::Number, direction::Number)
+	(x + 15) * 40 * 4 + (y + 15) * 4 + direction
+end
+
+function dna_index (move::Move)
+	dna_index(move.start_x, move.start_y, move.direction)
+end
 
 const direction_names = String["ne", "e", "se", "s"]
 const direction_offset = (Int8,Int8)[(1,-1) (1,0) (1,1) (0,1)]
@@ -103,13 +114,13 @@ function initial_moves()
 	]
 end
 
-function initial_board()
-	#board = Dict{(Int8,Int8),Int8}()
+
+# this should really be handled through memoization
+function generate_initial_board()
 	board = zeros(Uint8, 40*40)
-	
-	moves = initial_moves()
-	for move in moves
-	
+
+  # iterate over the
+	for move in initial_moves()
 		delta_x, delta_y = direction_offset[move.direction]
 		
 		for i in 0:4
@@ -117,16 +128,15 @@ function initial_board()
 			y = move.start_y + delta_y * i
 		
 			if x != move.x || y != move.y
-				
-				#board[x,y] = mask_x
-				
 				board[board_index(x,y)] = mask_x
 			end		
 		end
-
 	end
-	
 	board
+end
+initial_board_master = generate_initial_board();
+function initial_board()
+  copy(initial_board_master)
 end
 
 
@@ -189,8 +199,6 @@ function find_loose_moves(evaluator::MorpionEvaluator)
 			
 			points_board[board_index(curr_x,curr_y)] += 1
 		end
-		
-	
 	end
 	
 	filter!(loose_moves) do loose_move
@@ -721,18 +729,6 @@ function unpack_binary(b::String)
 
 	morpion
 	
-end
-
-function board_index(x::Number, y::Number)
-	(x + 15) * 40 + (y + 15)
-end
-
-function dna_index(x::Number, y::Number, direction::Number)
-	(x + 15) * 40 * 4 + (y + 15) * 4 + direction
-end
-
-function dna_index (move::Move)
-	dna_index(move.start_x, move.start_y, move.direction)
 end
 
 function generate_dna(morpion::Morpion)

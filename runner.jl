@@ -105,7 +105,7 @@ function sync (index, searched, min_accept, name, load_visits)
 	
 	println("SYNC")
 	
-	file_path = "../../data/"
+	file_path = "./data/"
 	file_name = "$(file_path)$(name).library"
 	
 	block_counter = 1
@@ -360,7 +360,7 @@ end
 
 
 #parameters
-timeout_score_multiplier = 10
+timeout_score_multiplier = 100
 
 #i = -2 amazing
 
@@ -370,8 +370,8 @@ timeout_score_multiplier = 10
 #discover_reset = i
 
 i = -10
-index_accept = -3
-discover_reset = 0
+index_accept = -5
+discover_reset = -5
 
 
 end_search_accept = -5
@@ -478,8 +478,8 @@ while true
 #		end
 		
 		
-		t = 2
-		bound_mult = 2
+		t = 1
+		bound_mult = 1
 		
 
 		sa = a.score-(a.visits/(a.score*t))
@@ -508,7 +508,7 @@ while true
 		#t = 1.1 + (rand() * 0.9)
 		# 1 amazing
 		# 4 climbs really well and gets stuck with 0 reset
-		t = 2
+		t = 1
 		
 		sa = a.score-(a.visits/(a.score*t))
 		sb = b.score-(b.visits/(b.score*t)) 
