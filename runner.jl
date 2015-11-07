@@ -105,7 +105,7 @@ function sync (index, searched, min_accept, name, load_visits)
 	
 	println("SYNC")
 	
-	file_path = "./data/"
+	file_path = "../../data/"
 	file_name = "$(file_path)$(name).library"
 	
 	block_counter = 1
