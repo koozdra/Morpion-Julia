@@ -191,36 +191,25 @@ index[searchy.points_hash] = searchy
 
 
 #prime
-#f = 0
-#i = 0
-#tic()
-#for i in 1:10000
-#	searchy = Searchy(random_morpion())
-#	if searchy.score >= f
-#		f = searchy.score
-#		println("$(i). $(f)")
-#		index[searchy.points_hash] = searchy
-#	end
-#	i+=1
-#end
-#toc()
+f = 0
+i = 0
+tic()
+for i in 1:1000
+	searchy = Searchy(random_morpion())
+	if searchy.score >= f
+		f = searchy.score
+		println("$(i). $(f)")
+		index[searchy.points_hash] = searchy
+	end
+	i+=1
+end
+toc()
 
 
 searched = Dict{Uint64,Searchy}()
 end_searched = Dict{Uint64,Bool}()
 
-#pool = Searchy[]
 morpion_cache = Dict{Uint64,Morpion}()
-
-
-
-
-#pool_score = searchy.score
-
-
-
-
-
 
 function morpion_from_hash(morpion_cache::Dict{Uint64,Morpion}, searchy::Searchy)
 	
@@ -233,146 +222,25 @@ function morpion_from_hash(morpion_cache::Dict{Uint64,Morpion}, searchy::Searchy
 		
 		morpion_cache[searchy.points_hash] = morpion
 	end
-	
-	
+
 	morpion
 	
 end
 
-
-
-function modificationrandsingle(morpion, visits)
-	morpion_dna = generate_dna(morpion)
-	morpion_dna[dna_index(morpion.moves[rand(1:end)])]	= -1
-	eval_dna(morpion_dna)
-end
-
-
-function modification_rand_3(morpion, visits)
-	
-
-	morpion_dna = generate_dna(morpion)
-	#for i in 1:3
-		morpion_dna[dna_index(morpion.moves[rand(1:length(morpion.moves))])]	= -1
-	#end
-	
-	eval_dna(morpion_dna)
-end
-
 function modification(morpion, visits)
-	
-#	initial_random = 10
-#	
-#	if (visits < initial_random){
-#		morpion_dna[dna_index(morpion.moves[rand(1:length(morpion.moves))])]	= -1
-#	}
-#	else if (visits <= score(morpion) + initial){
-#		morpion_dna = generate_dna(morpion)
-#		position = ((visits) % score(morpion)) + 1
-#		morpion_dna[dna_index(morpion.moves[position])]	= -1
-#	}
-
 	morpion_dna = generate_dna(morpion)
 
 	position = ((visits) % score(morpion)) + 1
 	morpion_dna[dna_index(morpion.moves[position])]	= -1
-	
-#	if visits & 1 == 1
-#		#for i in rand(2:3)
-#		#move = morpion.moves[rand(1:(score(morpion)*0.7))]
-#		
-#		#t = 0.2 + ((step % 1000) / 1000) * 0.8
-#		t = 1
-#		
-#		move = morpion.moves[rand(1:floor(score(morpion)*t))]
-#		morpion_dna[dna_index(move)]	= -1
-#	else
-#	
-#		position = ((visits/2) % score(morpion)) + 1
-#		morpion_dna[dna_index(morpion.moves[position])]	= -1
-#		
-#	end
-	
-	
-	#move = morpion.moves[rand(1:score(morpion))]
-	#morpion_dna[dna_index(move)]	= -1
-	
-#	if visits % 2 == 1
-#		#for i in rand(2:3)
-#		for i in 1:3
-#			move = morpion.moves[rand(1:score(morpion))]
-#			morpion_dna[dna_index(move)]	= -1
-#		end
-#	else
-#		position = ((visits/2) % score(morpion)) + 1
-#		morpion_dna[dna_index(morpion.moves[position])]	= -1
-#	end
-
-#	if (floor(score(morpion) / visits)) % 2 == 1
-#		move = morpion.moves[rand(1:score(morpion))]
-#		morpion_dna[dna_index(move)]	= -1
-#	else
-#		position = ((visits) % score(morpion)) + 1
-#		morpion_dna[dna_index(morpion.moves[position])]	= -1
-#	end
-
-
-#	position = (visits % score(morpion)) + 1
-#	morpion_dna[dna_index(morpion.moves[position])]	= -1
-	
-#	if visits < score(morpion)
-#		position = (visits % score(morpion)) + 1
-#		morpion_dna[dna_index(morpion.moves[position])]	= -1
-#	
-#	else
-#		if visits % 2 == 1
-#			#for i in rand(2:3)
-#			for i in 1:3
-#				move = morpion.moves[rand(1:score(morpion))]
-#				morpion_dna[dna_index(move)]	= -1
-#			end
-#		else
-#			position = ((visits/2) % score(morpion)) + 1
-#			morpion_dna[dna_index(morpion.moves[position])]	= -1
-#		end
-#	end
-	
-	
-	
-#	if visits % (score(morpion) * 4) < (score(morpion)*2)
-#		position = (visits % score(morpion)) + 1
-#		morpion_dna[dna_index(morpion.moves[position])]	= -1
-#	else
-#		for i in 1:3
-#			move = morpion.moves[rand(1:score(morpion))]
-#			morpion_dna[dna_index(move)]	= -1
-#		end	
-#	end
 
 	eval_dna(morpion_dna)
-
 end
-
-#function reset(pool, )
-
-
-#function new_found(index, 
-
 
 #parameters
 timeout_score_multiplier = 100
 
-#i = -2 amazing
-
-#the best
-#i = -10
-#index_accept = i
-#discover_reset = i
-
-i = -10
 index_accept = -5
 discover_reset = -5
-
 
 end_search_accept = -5
 end_search_trials = 40
@@ -408,9 +276,6 @@ min_score_end_search = 105
 offset = 0
 offset_incr = 1 / 1000
 
-
-
-
 tic()
 
 while true
@@ -421,34 +286,6 @@ while true
 	is_new_equal = false
 	is_max_score_found = false
 	
-	#build pool
-#	if isempty(pool)
-#		#println("building pool")
-#		
-#		empty!(morpion_cache)
-#		
-#		pool_score = 0
-#		
-#		for searchy in values(index)
-#			if searchy.score > pool_score
-#				pool_score = searchy.score
-#			end
-#		end
-#		
-#		
-#		for hash in keys(index)
-#			searchy = index[hash]
-#			
-#			
-#			if searchy.score >= pool_score + pool_accept && !haskey(searched,hash)
-#				push!(pool, searchy)
-#			end
-#		
-#		end
-#	
-#	end
-	
-	
 
 	#selection
 	#searchy = pool[(step%length(pool)) + 1]
@@ -456,31 +293,9 @@ while true
 	# 1,4 really good
 	# 1,2 really good in random modification (150 all around same evening)
 	function explore (a,b)
-		
-		#t = rand(0.9:1.1)
-		#t = 1
-		#t = rand(0.5:1.0)
-		
-		#t = 1 + ((step % 1000) / 1000) * 1
-		
-		#t = 0.1 + ((step % 1000) / 1000) * 0.4
-		
-		# the best
-		#t = 1
-#		if (step % 10 == 0)
-#			t = 2
-#		else
-#			lower_bound = 0.5
-#			upper_bound = 1
-#			period = 1000
-#			
-#			t = lower_bound + ((step % period) / period) * (upper_bound - lower_bound)
-#		end
-		
-		
+
 		t = 1
 		bound_mult = 1
-		
 
 		sa = a.score-(a.visits/(a.score*t))
 		sb = b.score-(b.visits/(b.score*t)) 
@@ -499,15 +314,8 @@ while true
 			return b
 		end
 	end
-	
-	#note: there is no map reduction when the pool is of length one
-	#min_visits = pool[1].visits
-	
+
 	function exploit (a,b)
-		#t = rand(1.9:2.1)
-		#t = 1.1 + (rand() * 0.9)
-		# 1 amazing
-		# 4 climbs really well and gets stuck with 0 reset
 		t = 1
 		
 		sa = a.score-(a.visits/(a.score*t))
@@ -517,70 +325,14 @@ while true
 		else
 			return b
 		end
-		
 	end
-	
-	
-#	function f (a,b)
-#		t = 0.1
-#		
-#		#min_visits = min(min_visits, min(a.visits,b.visits))
-#		
-#		if a.score-(a.visits/(a.score*t)) > b.score-(b.visits/(b.score*t))
-#			return a
-#		else
-#			return b
-#		end
-#	end
-#	
-#	searchy = reduce ( f , values(index))
-	
-#	if step % 2000 < 1000
-#		searchy = reduce ( exploit , values(index))
-#	else
-#		searchy = reduce ( explore , values(index))
-#	end
-	
-	#searchy = reduce ( (a,b) -> a.visits < b.visits ? a : b , pool)
-	
-	#searchy = reduce ( exploit , values(index))
-	
-	#searchy = reduce ( (a,b) -> a.score > b.score || a.score == b.score && randbool() ? a : b , values(index))
-	
-	#searchy = reduce ( explore , values(index))
-	#searchy = reduce ( exploit , values(index))
-	
-	
+
 	
 	if step & 1 == 0
 		searchy = reduce ( exploit , values(index))
 	else
 		searchy = reduce ( explore , values(index))
 	end
-
-#	if randbool()
-#		searchy = reduce ( explore , pool)
-#	else
-#		searchy = reduce ( exploit , pool)
-#	end
-	
-#	if step % 2 == 0
-#		searchy = reduce ( explore , values(index))
-#	else
-#		searchy = reduce ( exploit , values(index))
-#	end
-	
-#	if step % 3 == 0
-#		searchy = reduce(exploit,pool) 
-#	elseif step % 3 == 1
-#		searchy = reduce ( (a,b) -> a.visits < b.visits ? a : b , pool)
-#	else
-#		searchy = reduce ( (a,b) -> a.score > b.score ? a : b , pool)
-#	end
-	
-	#searchy = reduce ( (a,b) -> a.visits < b.visits ? a : b , pool)
-	
-	
 	
 	searchy.step_visited = step
 
@@ -611,28 +363,6 @@ while true
 		empty!(end_searched)
 	end
 
-	
-#	if searchy.visits % 2 == 1
-#		for i in rand(1:3)
-#		
-#		
-#		
-#			move = morpion.moves[rand(1:score(morpion))]
-#			morpion_dna[dna_index(move)]	= -1
-#		end
-#	else
-#		position = ((searchy.visits/2) % score(morpion)) + 1
-#		morpion_dna[dna_index(morpion.moves[position])]	= -1
-#	end
-
-#	eval_morpion = eval_dna(morpion_dna)
-	
-#	if step % 2 == 0
-#		eval_morpion = modification(morpion, searchy.visits)
-#	else
-#		eval_morpion = modification(morpion, searchy.visits)
-#	end
-	
 	#eval_morpion = modification(morpion, searchy.visits)
 	if step & 1 == 0
 		eval_morpion = modification(morpion, searchy.visits)
@@ -640,10 +370,6 @@ while true
 		eval_morpion = modification(morpion, searchy.visits + floor(searchy.score * offset))
 	end
 
-#	eval_morpion = modification(morpion, searchy.visits + floor(searchy.score * offset))
-	
-#	eval_morpion = modificationrandsingle(morpion, searchy.visits)
-	
 	eval_hash = points_hash(eval_morpion)
 	
 
@@ -715,19 +441,6 @@ while true
 		
 		index[eval_hash] = new_searchy
 		
-#		if score(eval_morpion) >= pool_score + pool_accept
-#			push!(pool, new_searchy)
-#		end
-		
-#		searchy.visits = 0
-		
-		
-		
-#		if score(eval_morpion) > pool_score
-#			empty!(pool)
-#		end
-		
-		
 	end
 	
 	if score(eval_morpion) > score(morpion)
@@ -735,28 +448,9 @@ while true
 	end
 	
 	if score(eval_morpion) > max_score
-	
-#		max_score = score(eval_morpion)
-#		max_pack = generate_pack(eval_morpion)
-			
-#		println()
-#		println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-#		println("$(step). $(max_score) $(max_pack)")
-#		println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-#		println()
-		
-#		max_index_score = max_score
-		
-#		min_visited_score = max_score
-		
-		
-		
+
 		is_record = true
-		
-		
-		#empty!(pool)
-		
-	
+
 	end
 	
 	if searchy.visits > searchy.score * timeout_score_multiplier
@@ -811,26 +505,7 @@ while true
 		end
 		
 		end_searchy = reduce(end_search_reduce, values(index))
-		
-#		if score(eval_morpion) >= score(morpion)
-#			end_searchy = Searchy(eval_morpion)
-#		else
-#			end_searchy = reduce(end_search_reduce, values(index))
-#		end
-	
-#	end_searchy = searchy
-#		
-#	if score(eval_morpion) >= min_visited_score + auto_end_search
-#		end_searchy = Searchy(eval_morpion)
-#	end
-#	
-#	if end_search_activated && max_score >= 110 && !haskey(end_searched, end_searchy.points_hash)
-		
-		
-		
-		
-		
-		
+
 		
 		end_morpion = morpion_from_hash(morpion_cache, end_searchy)
 		
@@ -866,21 +541,7 @@ while true
 					end_search_searchy = Searchy(new_morpion)
 				
 					index[ph] = end_search_searchy
-				
-#					if score(new_morpion) >= pool_score + pool_accept
-#						push!(pool, end_search_searchy)
-#					end
-#				
-#					if score(new_morpion) > pool_score
-#						pool_score = score(new_morpion)
-#						empty!(pool)
-#					end
-				
-				
-	#				if score(new_morpion) >= score(morpion)
-	#					delete!(end_searched, searchy.points_hash)
-	#				end
-				
+
 					indicator = "->"
 					gap = " "
 		
@@ -909,23 +570,7 @@ while true
 	end
 	
 	if length(index) > max_index_length
-		
-		#step_visited_total = sum((x,y) -> x.step_visited+y.step_visited, values(index))
-		
-		
-		
-		#total = sum(map((x)->x.score, values(index)))
-		#average = total / length(index)
-		#filter!( (k,v) -> v.score >= average , index)
-		
-		
-#		i = 0
-#		length_index = length(index)
-#		filter!(sort(index, by=(ak,av)->av.score)) do k,v
-#			i += 1
-#			i < length_index
-#		end
-		
+
 		index_searchies = sort(map((x)->x[2], index), by=(x)->x.score)
 		empty!(index)
 		
@@ -933,31 +578,14 @@ while true
 			#s.visits = 0
 			index[s.points_hash] = s
 		end
-		
-		
-		
-		
-#		scores = sort(map((x)->x[2], index), by=(x)->x.score)
-#		
-#		empty!(index)
-#		
-#		for s in scores[floor(length(scores)/2):length(scores)]
-#			index[s.points_hash] = s
-#		end
-		
-#		scores = sort(map((x)->x.score, values(index)))
-#		median = scores[floor(length(scores)/2)]
-#		filter!( (k,v) -> v.score >= median , index)
-		
+
 		empty!(morpion_cache)
 		empty!(end_searched)
 		
 		
 		
 		println ("$step. && Cleaning Index: $(max_index_length) -> $(length(index))")
-		
-		#max_index_length += 100000
-		
+
 	end	
 	
 	
@@ -965,43 +593,7 @@ while true
 	#if is_improvement
 		@time sync(index, searched, min_visited_score, filename, isrestarting)
 	end
-	
-	
-#	if is_record
-#		max_score = score(eval_morpion)
-#		max_pack = generate_pack(eval_morpion)
-#			
-#		println()
-#		println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-#		println("$(step). $(max_score) $(max_pack)")
-#		println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-#		println()
-#		
-#		max_index_score = max_score
-#		
-#		min_visited_score = max_score
 
-#	end
-	
-#	if inactivity_counter > 0 && inactivity_counter > inactivity_reset && length(index) > 0
-#		
-#		println("doing this")
-#		
-#		inactivity_counter = 0
-#		
-
-##		filter((k,v)-> v.score < max_index_score, index)
-#		max_index_score, i = findmax(map((x)->x.score, values(index)))
-#		
-#		println("-- abandoning top ($(max_index_score))")
-#		
-#		for (k,v) in index
-#			if v.score == max_index_score
-#				v.visits = 100000
-#			end
-#		end
-#		
-#	end	
 		
 	searchy.visits += 1
 	step += 1
@@ -1013,57 +605,4 @@ while true
   end
 	
 
-end
-
-
-
-type data
-	index::Dict{Uint64,Searchy}
-	morpion_cache = Dict{Uint64,Morpion}
-	taboo = Dict{Uint64,Searchy}
-	end_searched = Dict{Uint64,Bool}
-end
-
-Data() = Data(Dict{Uint64,Searchy}(), Dict{Uint64,Morpion}(), Dict{Uint64,Searchy}(), Dict{Uint64,Bool}())
-
-function process (index::Dict{Uint64,Searchy}, morpion::Morpion)
-
-end
-
-function explore (index::Dict{Uint64,Searchy})
-	
-	function reduction(a,b)
-		t = 1
-		sa = a.score-(a.visits/(t))
-		sb = b.score-(b.visits/(t)) 
-		
-		sa > sb || sa == sb && randbool()
-	end
-	
-	searchy = reduce ( reduction , values(index))
-	
-	process(index, modification(morpion, searchy.visits))
-	
-end
-
-function exploit (index::Dict{Uint64,Searchy})
-	
-	
-	
-end
-
-
-function setup(index::Dict{Uint64,Searchy})
-
-end
-
-
-
-index = Dict{Uint64,Searchy}()
-
-setup(index)
-
-while true
-	explore(index)
-	exploit(index)
 end

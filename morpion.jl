@@ -81,7 +81,7 @@ const mask_x = 0b00001
 const mask_dir = [0b00010, 0b00100, 0b01000, 0b10000]
 
 
-function initial_moves()
+function generate_initial_moves()
 	Move[
 		Move(3,-1,3,-1,4),
 		Move(6,-1,6,-1,4),
@@ -112,6 +112,10 @@ function initial_moves()
 		Move(7,9,3,9,2),
 		Move(7,7,5,9,1)
 	]
+end
+cached_initial_moves = generate_initial_moves()
+function initial_moves()
+  copy(cached_initial_moves)
 end
 
 
@@ -166,8 +170,7 @@ function random_completion(evaluator::MorpionEvaluator)
 		make_move(evaluator, evaluator.possible_moves[rand(1:length(evaluator.possible_moves))])
 	end
 	
-	@assert isempty(evaluator.possible_moves) "random completion has remnant possible moves"
-	
+	#@assert isempty(evaluator.possible_moves) "random completion has remnant possible moves"
 end
 
 function find_loose_moves(evaluator::MorpionEvaluator)
@@ -418,7 +421,6 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 	push!(evaluator.possible_moves, move)
 	
 	# update the board to reflect the removal of the move
-	
 	evaluator.board[board_index(move.x,move.y)] &= ~mask_x
 	
 	delta_x, delta_y = direction_offset[move.direction]
@@ -531,33 +533,16 @@ function make_move(board::Array{Uint8,1}, move::Move, possible_moves::Array{Move
 	#println("making: $move")
 	
 	
-	@assert in(move, possible_moves) "attempting to make move not in possible moves"
+	#@assert in(move, possible_moves) "attempting to make move not in possible moves"
 	
 	update_board(board, move)
 	
 	#validate_line(board, move.start_x ,move.start_y , move.direction)
 	
-	#delete!(possible_moves, move)
+
+	# TODO can these be done with one filter operation?
 	deleteat!(possible_moves, findfirst(possible_moves, move))
-	#println("removing: $move")
-	
-	
-	#println()
-	#println(possible_moves)
-	
 	filter!( (move::Move) -> validate_line(board, move.start_x ,move.start_y , move.direction) != () , possible_moves)
-	
-#	filter!(possible_moves) do move
-#		t = validate_line(board, move.start_x ,move.start_y , move.direction) != ()
-#		
-#		if !t
-#			#println("removing: $move")
-#		end
-#		
-#		t
-#	end
-	#println(possible_moves)
-	#println()
 
 	
 	for direction in 1:4
@@ -576,7 +561,8 @@ function make_move(board::Array{Uint8,1}, move::Move, possible_moves::Array{Move
 			if position != () 
 				
 				new_move = Move(position[1], position[2], test_x, test_y, direction)
-				
+
+				# TODO this in operation might be avoided if we use a set
 				if !in(new_move, possible_moves)
 
 					push!(possible_moves, new_move)
@@ -643,10 +629,7 @@ function pack_binary (moves::Array{Move,1})
 				taboo_moves[move] = true
 				b = string(b,"0")
 			end
-		
-		
 		end
-		
 	end
 	
 	b
@@ -654,11 +637,7 @@ end
 
 function generate_pack(morpion::Morpion)
 
-	
 	b = pack_binary(morpion.moves)
-	
-	
-	collector = ""
 	
 	i = 1
 	
@@ -674,21 +653,16 @@ function generate_pack(morpion::Morpion)
 		bin_pack *= string(base64_enc_table[index])
 	end
 
-
 	bin_pack
 end
 
 function unpack_pack(pack::String)
 	b = ""
-	
-	
-	
+
 	for char in pack
 		b = string(b, base64hex(char))
 	end
-	
-	
-	
+
 	unpack_binary(b)
 	
 end
@@ -757,9 +731,6 @@ function eval_dna (dna::Array{Float64,1})
 end	
 
 function random_morpion()
-	
-#	evaluator = MorpionEvaluator()
-	
 	possible_moves = initial_moves()
 	board = initial_board()
 	taken_moves = Move[]
@@ -775,14 +746,10 @@ end
 
 function points_hash(morpion::Morpion)
 	hash(sort(map( (move) -> (move.x,move.y), morpion.moves)))
-	
 end
 
 
 function end_search(morpion::Morpion, trials::Number)
-	
-	
-	
 	evaluator = morpion_evaluator(copy(morpion))
 
 	index = Dict{Uint64,Bool}()
