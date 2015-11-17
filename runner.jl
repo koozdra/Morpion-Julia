@@ -194,7 +194,7 @@ index[searchy.points_hash] = searchy
 f = 0
 i = 0
 tic()
-for i in 1:1000
+for i in 1:4000
 	searchy = Searchy(random_morpion())
 	if searchy.score >= f
 		f = searchy.score
@@ -251,7 +251,7 @@ inactivity_reset = 5000
 end_search_activated = true
 end_search_improvements = true
 
-end_search_interval = 1000
+end_search_interval = 500
 
 
 auto_end_search = -4
@@ -269,7 +269,7 @@ min_visited_score = 0
 discovery_count = 0
 # tuned >4, <16
 # 20 was amazing, trying something lower
-discovery_interval = 20
+discovery_interval = 5
 
 min_score_end_search = 105
 
@@ -294,8 +294,8 @@ while true
 	# 1,2 really good in random modification (150 all around same evening)
 	function explore (a,b)
 
-		t = 1
-		bound_mult = 1
+		t = 0.5
+		bound_mult = 0.5
 
 		sa = a.score-(a.visits/(a.score*t))
 		sb = b.score-(b.visits/(b.score*t)) 
@@ -367,7 +367,8 @@ while true
 	if step & 1 == 0
 		eval_morpion = modification(morpion, searchy.visits)
 	else
-		eval_morpion = modification(morpion, searchy.visits + floor(searchy.score * offset))
+		#eval_morpion = modification(morpion, searchy.visits + floor(searchy.score * offset))
+		eval_morpion = modification(morpion, searchy.visits)
 	end
 
 	eval_hash = points_hash(eval_morpion)
