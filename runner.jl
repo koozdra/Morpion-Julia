@@ -182,7 +182,7 @@ searchy = Searchy(random_morpion())
 #searchy = Searchy(unpack_pack("CiEjb7GMYJSZZXBOXdWvZ/VYfWe/95V5f+vK9/zbX/u"))
 
 #searchy = Searchy(unpack_pack("AYOOj1VpKGGimNoZQioUyn+cf2Hn59/PFrXeUOM92zf/3ce//vvo"))
-searchy = Searchy(unpack_pack("7mBHf7A"))
+#searchy = Searchy(unpack_pack("7mBHf7A"))
 
 
 
@@ -191,19 +191,19 @@ index[searchy.points_hash] = searchy
 
 
 #prime
-f = 0
-i = 0
-tic()
-for i in 1:4000
-	searchy = Searchy(random_morpion())
-	if searchy.score >= f
-		f = searchy.score
-		println("$(i). $(f)")
-		index[searchy.points_hash] = searchy
-	end
-	i+=1
-end
-toc()
+#f = 0
+#i = 0
+#tic()
+#for i in 1:4000
+#	searchy = Searchy(random_morpion())
+#	if searchy.score >= f
+#	  f = searchy.score
+#		println("$(i). $(f)")
+#		index[searchy.points_hash] = searchy
+#	end
+#	i+=1
+#end
+#toc()
 
 
 searched = Dict{Uint64,Searchy}()
@@ -237,8 +237,9 @@ function modification(morpion, visits)
 end
 
 #parameters
-timeout_score_multiplier = 100
+timeout_score_multiplier = 20
 
+# -5 records
 index_accept = -5
 discover_reset = -5
 
@@ -256,8 +257,10 @@ end_search_interval = 500
 
 auto_end_search = -4
 
-max_index_length = 40000
-forget_percent_save = 0.1
+min_max_index_length = 100
+max_index_length = min_max_index_length
+index_length_increment = 100
+forget_percent_save = 0.5
 
 max_index_score = 0
 
@@ -269,12 +272,14 @@ min_visited_score = 0
 discovery_count = 0
 # tuned >4, <16
 # 20 was amazing, trying something lower
-discovery_interval = 5
+discovery_interval = 10
 
 min_score_end_search = 105
 
 offset = 0
 offset_incr = 1 / 1000
+
+max_score_discover_multiplier = 0
 
 tic()
 
@@ -295,7 +300,7 @@ while true
 	function explore (a,b)
 
 		t = 0.5
-		bound_mult = 0.5
+		bound_mult = 1
 
 		sa = a.score-(a.visits/(a.score*t))
 		sb = b.score-(b.visits/(b.score*t)) 
@@ -316,7 +321,7 @@ while true
 	end
 
 	function exploit (a,b)
-		t = 1
+		t = 2
 		
 		sa = a.score-(a.visits/(a.score*t))
 		sb = b.score-(b.visits/(b.score*t)) 
@@ -334,6 +339,8 @@ while true
 		searchy = reduce ( explore , values(index))
 	end
 	
+	#searchy = reduce ( exploit , values(index))
+
 	searchy.step_visited = step
 
 	morpion = morpion_from_hash(morpion_cache, searchy)
@@ -359,7 +366,9 @@ while true
 		
 		min_visited_score = max_score
 		
-		
+		# experimental
+		max_index_length = min_max_index_length
+
 		empty!(end_searched)
 	end
 
@@ -413,18 +422,18 @@ while true
 		
 		is_new_found = true
 		
-
-		
 		discovery_count += 1
 		
 		
 		
-		
-		
-		println("$step. $gap$(score(morpion)) $(indicator) $(score(eval_morpion)) $(searchy.visits) $(min_visited_score)/$(max_index_score)/$(max_score) ($(length(index)),$(length(morpion_cache)),$(length(end_searched))) ")
+		max_score_discover_multiplier = max(max_score_discover_multiplier, convert(Int, floor(searchy.visits/score(morpion))))
+
+		# main println
+		println("$step. $gap$(score(morpion)) $(indicator) $(score(eval_morpion)) $(searchy.visits) $(min_visited_score)/$(max_index_score)/$(max_score) ($(length(index)),$(length(morpion_cache)),$(length(end_searched)),$(max_index_length),$(max_score_discover_multiplier)) ")
 
 		
 
+		#if score(eval_morpion) >= score(morpion) + discover_reset && searchy.visits > score(morpion)
 		if score(eval_morpion) >= score(morpion) + discover_reset
 			searchy.visits = 0
 			inactivity_counter = 0
@@ -472,26 +481,28 @@ while true
 
 	
 	
-	if step % 10000 == 0
-		empty!(morpion_cache)
-	end
+	#if step % 10000 == 0
+	#	empty!(morpion_cache)
+	#end
 	
 	if step % 1000 == 0
 		time = toq()
-		println("$(step). $(max_score) $(max_pack)")
+		println("$(step). $(max_score) $(max_pack) ($(max_index_length))")
 		println(" $(inactivity_counter)")
 		println(" elapsed: $(time)")
 		tic()
 	end
 	
-	if length(morpion_cache) > 5000
-		empty!(morpion_cache)
-	end
+	#if length(morpion_cache) > 5000
+	#	empty!(morpion_cache)
+	#end
 	
 #	if end_search_activated && max_score >= min_score_end_search && (end_search_improvements && score(eval_morpion) >= score(morpion) + min_accept || (step % end_search_interval == 0 && !isempty(index)))
 	
 	#if max_score >= min_score_end_search && end_search_activated && discovery_count >= discovery_interval
-	if max_score >= min_score_end_search && end_search_activated && ((discovery_count >= discovery_interval) || (is_new_found && score(eval_morpion) >= score(morpion)))
+	#if max_score >= min_score_end_search && end_search_activated && ((discovery_count >= discovery_interval) || (is_new_found && score(eval_morpion) >= score(morpion)))
+	#if max_score >= min_score_end_search && end_search_activated && ((discovery_count >= discovery_interval) || (score(eval_morpion) >= score(morpion)))
+	if max_score >= min_score_end_search && end_search_activated && (!haskey(end_searched, searchy.points_hash))
 	#if max_score >= min_score_end_search && end_search_activated && (!haskey(end_searched, searchy.points_hash) || discovery_count >= discovery_interval)
 	#if max_score >= min_score_end_search && end_search_activated && (!haskey(end_searched, searchy.points_hash) || (step % end_search_interval == 0 && !isempty(index)))
 	
@@ -581,17 +592,21 @@ while true
 		end
 
 		empty!(morpion_cache)
-		empty!(end_searched)
+		
+		# noticing that a lot of duplication is happening because clearing th end_searched
+		#empty!(end_searched)
 		
 		
 		
 		println ("$step. && Cleaning Index: $(max_index_length) -> $(length(index))")
 
+		max_index_length += index_length_increment
+
 	end	
 	
 	
-	if step >= sync_min && (step % sync_interval == 1)	
-	#if is_improvement
+	#if step >= sync_min && (step % sync_interval == 1)	
+	if is_improvement
 		@time sync(index, searched, min_visited_score, filename, isrestarting)
 	end
 
