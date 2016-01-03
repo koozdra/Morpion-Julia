@@ -50,6 +50,10 @@
 
 # new one, TODO visualize
 #178 kiQjjq5SCREWSWmi1kYvbXp0r9Vzn++z308h3TdRm/X93l3/6fLW
+#171 KRFEqzHWskaC2VFDFWmIkl1fbu/JnC+N582f5vf09Xndv/v7c8
+
+# really active in the 160's
+#169 0yAij1VlSSRWksIzgzcdXa3f7fri/K+0HbvlWf6/v+8Uf59+
 
 
 
@@ -166,7 +170,7 @@ max_pack = ""
 
 searchy = Searchy(random_morpion())
 
-#searchy = Searchy(unpack_pack("FEBMv6lokkiL84GQw1Lnd1Q9p/u7nv0/vsf513X9v+7f/rv"))
+#searchy = Searchy(unpack_pack("0yAij1VlSSRWksIzgzcdXa3f7fri/K+0HbvlWf6/v+8Uf59+"))
 
 #benchmark
 #searchy = Searchy(unpack_pack("JhRdb1OMayBDnrJbM8Upr3fetf+/79ug"))
@@ -183,7 +187,7 @@ searchy = Searchy(random_morpion())
 
 #searchy = Searchy(unpack_pack("AYOOj1VpKGGimNoZQioUyn+cf2Hn59/PFrXeUOM92zf/3ce//vvo"))
 #searchy = Searchy(unpack_pack("7mBHf7A"))
-
+#searchy = Searchy(unpack_pack("KRFEqzHWskaC2VFDFWmIkl1fbu/JnC+N582f5vf09Xndv/v7c8"))
 
 
 index = Dict{Uint64,Searchy}()
@@ -237,17 +241,29 @@ function modification(morpion, visits)
 end
 
 #parameters
-timeout_score_multiplier = 20
+timeout_score_multiplier = 10
 
 # -5 records
 index_accept = -5
 discover_reset = -5
 
-end_search_accept = -5
+end_search_accept = -20
 end_search_trials = 40
+
+focus_modifier = 1/2000
+focus_multiplier = 1.0001
+focus_min = focus_modifier
+focus_inactive_reset = 5000
+focus_inactivity_max = 10000
+focus = focus_min
+focus_min_reset = 5
+
+
 
 inactivity_counter = 0
 inactivity_reset = 5000
+
+last_active_step = 0
 
 end_search_activated = true
 end_search_improvements = true
@@ -298,8 +314,9 @@ while true
 	# 1,4 really good
 	# 1,2 really good in random modification (150 all around same evening)
 	function explore (a,b)
-
-		t = 0.5
+	
+		# 0.33 amazing here
+		t = 0.33
 		bound_mult = 1
 
 		sa = a.score-(a.visits/(a.score*t))
@@ -321,7 +338,7 @@ while true
 	end
 
 	function exploit (a,b)
-		t = 2
+		t = focus
 		
 		sa = a.score-(a.visits/(a.score*t))
 		sb = b.score-(b.visits/(b.score*t)) 
@@ -332,12 +349,12 @@ while true
 		end
 	end
 
-	
-	if step & 1 == 0
-		searchy = reduce ( exploit , values(index))
-	else
-		searchy = reduce ( explore , values(index))
-	end
+	searchy = reduce ( exploit , values(index))
+	#if step & 1 == 0
+	#	searchy = reduce ( exploit , values(index))
+	#else
+	#	searchy = reduce ( explore , values(index))
+	#end
 	
 	#searchy = reduce ( exploit , values(index))
 
@@ -393,7 +410,7 @@ while true
 	
 	min_accept = score(morpion) + index_accept
 	#min_accept = pool_score + (index_accept * 2)
-	#min_accept = min(min_accept, min_visited_score)
+	#min_accept = min(score(morpion) + index_accept, min_visited_score)
 	
 	#println("$step. $(score(morpion)) $(searchy.visits) $(min_visited_score)/$(max_index_score)/$(max_score) $(length(index)),$(length(morpion_cache))))")
 	
@@ -421,15 +438,20 @@ while true
 		end
 		
 		is_new_found = true
+
+		
 		
 		discovery_count += 1
 		
+		#focus += focus_modifier		
 		
 		
 		max_score_discover_multiplier = max(max_score_discover_multiplier, convert(Int, floor(searchy.visits/score(morpion))))
 
 		# main println
-		println("$step. $gap$(score(morpion)) $(indicator) $(score(eval_morpion)) $(searchy.visits) $(min_visited_score)/$(max_index_score)/$(max_score) ($(length(index)),$(length(morpion_cache)),$(length(end_searched)),$(max_index_length),$(max_score_discover_multiplier)) ")
+		println("$step. $gap$(score(morpion)) $(indicator) $(score(eval_morpion)) $(searchy.visits) $(min_visited_score)/$(max_index_score)/$(max_score) ($(length(index)),$(length(morpion_cache)),$(length(end_searched)), $(max_index_length),$(max_score_discover_multiplier), $(step - last_active_step), $(round(focus, 2)) ")
+
+		
 
 		
 
@@ -487,7 +509,7 @@ while true
 	
 	if step % 1000 == 0
 		time = toq()
-		println("$(step). $(max_score) $(max_pack) ($(max_index_length))")
+		println("$(step). $(max_score) $(max_pack) ($(max_index_length), $(step - last_active_step), $(round(focus, 2)))")
 		println(" $(inactivity_counter)")
 		println(" elapsed: $(time)")
 		tic()
@@ -606,13 +628,32 @@ while true
 	
 	
 	#if step >= sync_min && (step % sync_interval == 1)	
-	if is_improvement
+	if is_record
 		@time sync(index, searched, min_visited_score, filename, isrestarting)
 	end
 
+	if is_new_equal
+		last_active_step = step
+	end
 		
 	searchy.visits += 1
 	step += 1
+
+	focus += focus_modifier	
+
+	#if focus_multiplier < 1000
+	#	focus *= focus_multiplier
+	#end
+
+	if (step - last_active_step > focus_inactive_reset && focus > focus_min_reset) || (step - last_active_step > focus_inactivity_max)
+		focus = focus_min
+
+		println("**************************************************************")
+		println("**************************************************************")
+
+		last_active_step = step
+
+	end
 
 	#offset
   offset += offset_incr
