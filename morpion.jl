@@ -1,5 +1,6 @@
 import Base.hash
 import Base.copy
+import Base.==
 
 #  R  XXXX
 #     X  X
@@ -70,12 +71,12 @@ function dna_index(x::Number, y::Number, direction::Number)
 	(x + 15) * 40 * 4 + (y + 15) * 4 + direction
 end
 
-function dna_index (move::Move)
+function dna_index(move::Move)
 	dna_index(move.start_x, move.start_y, move.direction)
 end
 
 const direction_names = String["ne", "e", "se", "s"]
-const direction_offset = (Int8,Int8)[(1,-1) (1,0) (1,1) (0,1)]
+const direction_offset = [(1,-1) (1,0) (1,1) (0,1)]
 const mask_x = 0b00001
 const mask_dir = [0b00010, 0b00100, 0b01000, 0b10000]
 
@@ -120,7 +121,7 @@ end
 
 # this should really be handled through memoization
 function generate_initial_board()
-	board = zeros(Uint8, 40*40)
+	board = zeros(UInt8, 40*40)
 
   # iterate over the
 	for move in initial_moves()
@@ -146,7 +147,7 @@ end
 type MorpionEvaluator
 	morpion::Morpion
 	possible_moves::Array{Move,1}
-	board::Array{Uint8,1}
+	board::Array{UInt8,1}
 end
 
 MorpionEvaluator() = MorpionEvaluator(Morpion(),initial_moves(),initial_board())
@@ -175,7 +176,7 @@ end
 function find_loose_moves(evaluator::MorpionEvaluator)
 	loose_moves = Move[]
 
-	points_board = zeros(Uint8, 40*40)
+	points_board = zeros(UInt8, 40*40)
 
 	for move in evaluator.morpion.moves
 		board_value = evaluator.board[board_index(move.x,move.y)]
@@ -304,7 +305,7 @@ function validate_line(board, x, y, direction)
 end
 
 
-function update_board (board::Array{Uint8,1}, move::Move)
+function update_board(board::Array{UInt8,1}, move::Move)
 
 	#board[board_index(move.x, move.y)] |= mask_x
 
@@ -526,7 +527,7 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 
 end
 
-function make_move(board::Array{Uint8,1}, move::Move, possible_moves::Array{Move, 1})
+function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move, 1})
 
 
 	#println("making: $move")
@@ -540,7 +541,8 @@ function make_move(board::Array{Uint8,1}, move::Move, possible_moves::Array{Move
 
 
 	# TODO can these be done with one filter operation?
-	deleteat!(possible_moves, findfirst(possible_moves, move))
+	# EXPERIMENTAL
+	# deleteat!(possible_moves, findfirst(possible_moves, move))
 	filter!( (move::Move) -> validate_line(board, move.start_x ,move.start_y , move.direction) != () , possible_moves)
 
 
@@ -574,15 +576,15 @@ function make_move(board::Array{Uint8,1}, move::Move, possible_moves::Array{Move
 end
 
 
-function base64hex (char::Char)
+function base64hex(char::Char)
 	enc = 0
 
 	if char >= 'A' && char <= 'Z'
-		enc = int(char) - 'A'
+		enc = char - 'A'
 	elseif char >= 'a' && char <= 'z'
-		enc = int(char) - 'a' + 26
+		enc = char - 'a' + 26
 	elseif char >= '0' && char <= '9'
-		enc = int(char) - '0' + 52
+		enc = char - '0' + 52
 	elseif char == '+'
 		enc = 62
 	elseif char == '/'
@@ -592,7 +594,7 @@ function base64hex (char::Char)
 	bits(enc)[(end-5):end]
 end
 
-function pack_binary (moves::Array{Move,1})
+function pack_binary(moves::Array{Move,1})
 	b = ""
 
 	#verify(Morpion(moves))
@@ -648,7 +650,8 @@ function generate_pack(morpion::Morpion)
 
 		hex = rpad(b[pos:min(length(b),pos+5)], 6, "0")
 
-		index = parseint("0b"*hex) + 1
+		# index = parseint("0b"*hex) + 1
+		index = parse(Int, "0b"*hex) + 1
 
 		bin_pack *= string(base64_enc_table[index])
 	end
@@ -716,7 +719,7 @@ function generate_dna(morpion::Morpion)
 	morpion_dna
 end
 
-function eval_dna (dna::Array{Float64,1})
+function eval_dna(dna::Array{Float64,1})
 	board = initial_board()
 	possible_moves = initial_moves()
 	morpion = Morpion()
@@ -751,7 +754,7 @@ end
 function end_search(morpion::Morpion, trials::Number)
 	evaluator = morpion_evaluator(copy(morpion))
 
-	index = Dict{Uint64,Bool}()
+	index = Dict{UInt64,Bool}()
 
 
 	min_accept = score(morpion) - 10

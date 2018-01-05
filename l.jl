@@ -47,11 +47,15 @@ function visit(searcher)
     init(searcher)
   end
 
+  # searcher.step += 1
+
   # selection
 
   # modification
 
   # side effects
+
+
 
 end
 

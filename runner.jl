@@ -119,12 +119,12 @@ end
 isrestarting = isfile("$(filename).library")
 
 type Searchy
-	points_hash::Uint64
+	points_hash::UInt64
 	score::Int32
 	pack::String
 	visits::Int32
-	step_created::Uint32
-	step_visited::Uint32
+	step_created::UInt32
+	step_visited::UInt32
 end
 
 function Searchy(morpion::Morpion)
@@ -140,7 +140,7 @@ end
 ## end_searched
 ## cache (maybe)
 
-function sync (index, searched, min_accept, name, load_visits)
+function sync(index, searched, min_accept, name, load_visits)
 
 	println("SYNC")
 
@@ -184,7 +184,7 @@ function sync (index, searched, min_accept, name, load_visits)
 		truncate(file,0)
 		for index_searchy in values(index)
 			if index_searchy.score >= min_accept
-				write (file, "$(index_searchy)\n")
+				write(file, "$(index_searchy)\n")
 			end
 		end
 		close(file)
@@ -237,7 +237,7 @@ searchy = Searchy(random_morpion())
 # searchy = Searchy(e.morpion)
 
 
-index = Dict{Uint64,Searchy}()
+index = Dict{UInt64,Searchy}()
 index[searchy.points_hash] = searchy
 
 
@@ -258,12 +258,12 @@ index[searchy.points_hash] = searchy
 # toc()
 
 
-searched = Dict{Uint64,Searchy}()
-end_searched = Dict{Uint64,Bool}()
+searched = Dict{UInt64,Searchy}()
+end_searched = Dict{UInt64,Bool}()
 
-morpion_cache = Dict{Uint64,Morpion}()
+morpion_cache = Dict{UInt64,Morpion}()
 
-function morpion_from_hash(morpion_cache::Dict{Uint64,Morpion}, searchy::Searchy)
+function morpion_from_hash(morpion_cache::Dict{UInt64,Morpion}, searchy::Searchy)
 	if haskey(morpion_cache, searchy.points_hash)
 		return morpion_cache[searchy.points_hash]
 	end
@@ -290,12 +290,12 @@ function modification_triple(morpion, visits)
 	eval_dna(morpion_dna)
 end
 
-#parameters
-timeout_score_multiplier = 10
+#hyper parameters
+timeout_score_multiplier = 100
 
 # -5 records
 index_accept = -5
-discover_reset = -5
+discover_reset = 0
 
 end_search_accept = -20
 end_search_trials = 40
@@ -356,7 +356,7 @@ while true
 
 	# 1,4 really good
 	# 1,2 really good in random modification (150 all around same evening)
-	function exploreBoundReducer (a,b)
+	function exploreBoundReducer(a,b)
 
 		# 0.33 amazing here
 		#t = 0.33
@@ -381,19 +381,7 @@ while true
 		end
 	end
 
-	function exploreReducer(a, b)
-		# 0.33 records
-		t = 0.33
 
-		sa = a.score-(a.visits/(a.score*t))
-		sb = b.score-(b.visits/(b.score*t))
-
-		if sa > sb || sa == sb #&& randbool()
-			return a
-		else
-			return b
-		end
-	end
 
 	function exploreScoreReducer(a, b)
 		t = 10
@@ -441,11 +429,25 @@ while true
 			return b
 		end
 	end
+	function exploreReducer(a, b)
+		# 0.33 records
+		t = 0.33
+		# t = 1
 
-	function exploitReducer (a,b)
+		sa = a.score-(a.visits/(a.score*t))
+		sb = b.score-(b.visits/(b.score*t))
+
+		if sa > sb || sa == sb #&& randbool()
+			return a
+		else
+			return b
+		end
+	end
+
+	function exploitReducer(a,b)
 		# records 1
-		t = 1
-
+		# t = 1
+		t = 3
 		sa = a.score-(a.visits/(a.score*t))
 		sb = b.score-(b.visits/(b.score*t))
 
@@ -464,9 +466,9 @@ while true
 	# end
 
 	if step & 1 == 0
-	 	searchy = reduce (exploitReducer, values(index))
+	 	searchy = reduce(exploitReducer, values(index))
 	else
-		searchy = reduce (exploreReducer, values(index))
+		searchy = reduce(exploreReducer, values(index))
 	end
 
 	#searchy = reduce ( exploit , values(index))
@@ -530,15 +532,15 @@ while true
 		morpion_cache[eval_hash] = eval_morpion
 	end
 
-	# dimitri
+
 	# if step % 100 == 0
 	# 	println("$step. $(score(morpion)) $(searchy.visits) $(round(searchy.visits / score(morpion), 2))")
 	# end
 
 	#min_accept = score(morpion) + index_accept
 	#min_accept = pool_score + (index_accept * 2)
-	min_accept = min(score(morpion) + index_accept, min_visited_score)
-	#min_accept = min_visited_score
+	# min_accept = min(score(morpion) + index_accept, min_visited_score)
+	min_accept = min_visited_score
 
 	#println("$step. $(score(morpion)) $(searchy.visits) $(min_visited_score)/$(max_index_score)/$(max_score) $(length(index)),$(length(morpion_cache))))")
 
@@ -556,6 +558,7 @@ while true
 			indicator = "=>"
 			gap = ""
 			is_new_equal = true
+			min_visited_score = score(eval_morpion)
 		end
 
 		if score(eval_morpion) > score(morpion)
@@ -663,7 +666,7 @@ while true
 
 		end_morpion = morpion_from_hash(morpion_cache, end_searchy)
 
-		println ("end search: $(score(end_morpion))")
+		println("end search: $(score(end_morpion))")
 
 		end_search_found = end_search(end_morpion, end_search_trials)
 
@@ -714,19 +717,21 @@ while true
 			c += 1
 		end
 
-		println ("  found: $(length(end_search_found)), used: $(used)")
+		println("  found: $(length(end_search_found)), used: $(used)")
 
 		println("================================================")
 	end
 
 	if length(index) > max_index_length
 
-		println ("$step. && Cleaning Index: $(max_index_length) -> $(length(index))")
+		println("$step. && Cleaning Index: $(max_index_length) -> $(length(index))")
+		# dimitri
+		index_searchies = sort(map(x -> x.second, collect(index)), by=x->x.score, rev=true)
 
-		index_searchies = sort(map((x)->x[2], index), by=(x)->x.score)
 		empty!(index)
 
-		for s in index_searchies[(length(index_searchies) - floor(max_index_length*forget_percent_save)):length(index_searchies)]
+		# for s in index_searchies[(length(index_searchies) - floor(max_index_length*forget_percent_save)):length(index_searchies)]
+		for s in index_searchies[1:trunc(Int, length(index_searchies) * forget_percent_save)]
 			#s.visits = 0
 			index[s.points_hash] = s
 		end
