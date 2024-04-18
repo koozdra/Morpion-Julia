@@ -118,7 +118,7 @@ end
 
 isrestarting = isfile("$(filename).library")
 
-type Searchy
+struct Searchy
 	points_hash::UInt64
 	score::Int32
 	pack::String
@@ -340,7 +340,7 @@ min_score_end_search = 105
 
 max_score_discover_multiplier = 0
 
-tic()
+# tic()
 
 while true
 

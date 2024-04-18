@@ -1,6 +1,7 @@
 import Base.hash
 import Base.copy
 import Base.==
+import Bits.bits
 
 #  R  XXXX
 #     X  X
@@ -13,7 +14,7 @@ import Base.==
 #     X  X
 #     XXXX
 # R = (0,0)
-immutable Move
+struct Move
 	x::Int8
 	y::Int8
 	start_x::Int8
@@ -46,7 +47,7 @@ function copy(move::Move)
 	Move(move.x,move.y,move.start_x,move.start_y,move.direction)
 end
 
-immutable Morpion
+struct Morpion
 	moves::Array{Move,1}
 end
 Morpion() = Morpion([])
@@ -144,7 +145,7 @@ function initial_board()
 end
 
 
-type MorpionEvaluator
+struct MorpionEvaluator
 	morpion::Morpion
 	possible_moves::Array{Move,1}
 	board::Array{UInt8,1}
@@ -678,6 +679,44 @@ function unpack_binary(b::String)
 	taboo_moves = Dict{Move,Bool}()
 	i = 1
 
+	moves = Move[]
+
+	sort!(possible_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+
+	while !isempty(possible_moves) && i <= length(b)
+
+		#collect all possible moves that don't appear in the taboo list
+		poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves,possible_move), possible_moves)
+
+		#@assert !isempty(poss_moves) "$(possible_moves)"
+
+		#sort in a consistent manner
+		sort!(poss_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+
+		for move in poss_moves
+			if b[i] == '1'
+				push!(moves,move)
+				make_move(board, move, possible_moves)
+			else
+				taboo_moves[move] = true
+			end
+			i += 1
+		end
+
+	end
+
+	moves
+
+end
+
+function unpack_binary(b::String)
+
+	possible_moves = initial_moves()
+	board = initial_board()
+
+	taboo_moves = Dict{Move,Bool}()
+	i = 1
+
 	morpion = Morpion()
 
 	sort!(possible_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
@@ -708,29 +747,67 @@ function unpack_binary(b::String)
 
 end
 
-function generate_dna(morpion::Morpion)
-	morpion_dna = rand(40*40*4)
+function generate_dna(moves::Array{Move,1})
+	morpion_dna = zeros(Int, 40*40*4)
 	i = 0
-	for move in morpion.moves
-		morpion_dna[dna_index(move)] = length(morpion.moves) + 1 - i
+	for move in moves
+		morpion_dna[dna_index(move)] = length(moves) + 1 - i
 		i += 1
 	end
 
 	morpion_dna
 end
 
-function eval_dna(dna::Array{Float64,1})
+# function generate_dna(morpion::Morpion)
+# 	morpion_dna = rand(40*40*4)
+# 	i = 0
+# 	for move in morpion.moves
+# 		morpion_dna[dna_index(move)] = length(morpion.moves) + 1 - i
+# 		i += 1
+# 	end
+
+# 	morpion_dna
+# end
+
+# function eval_dna(dna::Array{Float64,1})
+# 	board = initial_board()
+# 	possible_moves = initial_moves()
+# 	morpion = Morpion()
+
+# 	while !isempty(possible_moves)
+# 		move = reduce( (a,b) -> (dna[dna_index(a)] > dna[dna_index(b)]) ? a : b ,possible_moves)
+# 		push!(morpion.moves, move)
+# 		make_move(board, move, possible_moves)
+# 	end
+
+# 	morpion
+# end
+
+function eval_dna(dna::Array{Int,1})
 	board = initial_board()
 	possible_moves = initial_moves()
-	morpion = Morpion()
+	# morpion = Morpion()
+	moves = Move[]
+
+	function eval_reducer(a::Move, b::Move)
+		a_value = dna[dna_index(a)]
+		b_value = dna[dna_index(b)]
+	
+		if (a_value == 0 && b_value == 0)
+			rand() > 0.5 ? a : b
+		else
+			a_value > b_value ? a : b
+		end
+	end
 
 	while !isempty(possible_moves)
-		move = reduce( (a,b) -> (dna[dna_index(a)] > dna[dna_index(b)]) ? a : b ,possible_moves)
-		push!(morpion.moves, move)
+		# move = reduce( (a,b) -> (dna[dna_index(a)] > dna[dna_index(b)]) ? a : b, possible_moves)
+		move = reduce(eval_reducer, possible_moves)
+		push!(moves, move)
 		make_move(board, move, possible_moves)
 	end
 
-	morpion
+	moves
 end
 
 function random_morpion()
@@ -744,11 +821,16 @@ function random_morpion()
 		make_move(board, move, possible_moves)
 	end
 
-	Morpion(taken_moves)
+	# Morpion(taken_moves)
+	taken_moves
 end
 
 function points_hash(morpion::Morpion)
 	hash(sort(map( (move) -> (move.x,move.y), morpion.moves)))
+end
+
+function points_hash(moves::Array{Move,1})
+	hash(sort(map( (move) -> (move.x,move.y), moves)))
 end
 
 function end_search(morpion::Morpion, trials::Number)
