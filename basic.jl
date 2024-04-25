@@ -71,18 +71,6 @@ function main()
 	num_iterations_time = 100000
 	max_visits = 1000000
 
-	# State - Counters
-	step_back = 0
-	iteration = 0
-	num_new_generated_counter = 0
-	num_time_steps_no_new_generated_counter = 0
-	improvement_counter = 0
-	linger_counter = 0
-	select_new_item = false
-	index_max_score = max_score
-	t = time()
-	current_index_key = rand(keys(index))
-
 	# State - Indexes
 	# Store inferior solutions (based score) for later 
 	# use when temperature increases and back up is required
@@ -95,6 +83,18 @@ function main()
 	end_searched = Dict{UInt64, Bool}()
 	index = Dict{UInt64, Tuple{Int, Array{Move, 1}}}()
 	index[points_hash(max_moves)] = (0, max_moves)
+
+	# State - Counters
+	step_back = 0
+	iteration = 0
+	num_new_generated_counter = 0
+	num_time_steps_no_new_generated_counter = 0
+	improvement_counter = 0
+	linger_counter = 0
+	select_new_item = false
+	index_max_score = max_score
+	t = time()
+	current_index_key = rand(keys(index))
 
 	while true
 
