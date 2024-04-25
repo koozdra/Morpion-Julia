@@ -19,18 +19,18 @@ struct Move
 	y::Int8
 	start_x::Int8
 	start_y::Int8
-#	ne => 1,
-#	e => 2,
-#	se => 3,
-#	s => 4
+	#	ne => 1,
+	#	e => 2,
+	#	se => 3,
+	#	s => 4
 	direction::Int8
 end
 
 function move_equality(a::Move, b::Move)
 	a.x == b.x && a.y == b.y && a.start_x == b.start_x && a.start_y == b.start_y && a.direction == b.direction
 end
-==(a::Move, b::Move) = move_equality(a::Move,b::Move)
-isequal(a::Move, b::Move) = move_equality(a::Move,b::Move)
+==(a::Move, b::Move) = move_equality(a::Move, b::Move)
+isequal(a::Move, b::Move) = move_equality(a::Move, b::Move)
 
 
 
@@ -44,11 +44,11 @@ function isless(a::Move, b::Move)
 end
 
 function copy(move::Move)
-	Move(move.x,move.y,move.start_x,move.start_y,move.direction)
+	Move(move.x, move.y, move.start_x, move.start_y, move.direction)
 end
 
 struct Morpion
-	moves::Array{Move,1}
+	moves::Array{Move, 1}
 end
 Morpion() = Morpion([])
 
@@ -77,54 +77,54 @@ function dna_index(move::Move)
 end
 
 const direction_names = String["ne", "e", "se", "s"]
-const direction_offset = [(1,-1) (1,0) (1,1) (0,1)]
+const direction_offset = [(1, -1) (1, 0) (1, 1) (0, 1)]
 const mask_x = 0b00001
 const mask_dir = [0b00010, 0b00100, 0b01000, 0b10000]
 
 
 function generate_initial_moves()
 	Move[
-		Move(3,-1,3,-1,4),
-		Move(6,-1,6,-1,4),
-		Move(2,0,2,0,2),
-		Move(7,0,3,0,2),
-		Move(3,4,3,0,4),
-		Move(7,2,5,0,3),
-		Move(6,4,6,0,4),
-		Move(0,2,0,2,4),
-		Move(9,2,9,2,4),
-		Move(-1,3,-1,3,2),
-		Move(4,3,0,3,2),
-		Move(0,7,0,3,4),
-		Move(5,3,5,3,2),
-		Move(10,3,6,3,2),
-		Move(9,7,9,3,4),
-		Move(2,2,0,4,1),
-		Move(2,7,0,5,3),
-		Move(3,5,3,5,4),
-		Move(6,5,6,5,4),
-		Move(-1,6,-1,6,2),
-		Move(4,6,0,6,2),
-		Move(3,10,3,6,4),
-		Move(5,6,5,6,2),
-		Move(10,6,6,6,2),
-		Move(6,10,6,6,4),
-		Move(2,9,2,9,2),
-		Move(7,9,3,9,2),
-		Move(7,7,5,9,1)
+		Move(3, -1, 3, -1, 4),
+		Move(6, -1, 6, -1, 4),
+		Move(2, 0, 2, 0, 2),
+		Move(7, 0, 3, 0, 2),
+		Move(3, 4, 3, 0, 4),
+		Move(7, 2, 5, 0, 3),
+		Move(6, 4, 6, 0, 4),
+		Move(0, 2, 0, 2, 4),
+		Move(9, 2, 9, 2, 4),
+		Move(-1, 3, -1, 3, 2),
+		Move(4, 3, 0, 3, 2),
+		Move(0, 7, 0, 3, 4),
+		Move(5, 3, 5, 3, 2),
+		Move(10, 3, 6, 3, 2),
+		Move(9, 7, 9, 3, 4),
+		Move(2, 2, 0, 4, 1),
+		Move(2, 7, 0, 5, 3),
+		Move(3, 5, 3, 5, 4),
+		Move(6, 5, 6, 5, 4),
+		Move(-1, 6, -1, 6, 2),
+		Move(4, 6, 0, 6, 2),
+		Move(3, 10, 3, 6, 4),
+		Move(5, 6, 5, 6, 2),
+		Move(10, 6, 6, 6, 2),
+		Move(6, 10, 6, 6, 4),
+		Move(2, 9, 2, 9, 2),
+		Move(7, 9, 3, 9, 2),
+		Move(7, 7, 5, 9, 1),
 	]
 end
 cached_initial_moves = generate_initial_moves()
 function initial_moves()
-  copy(cached_initial_moves)
+	copy(cached_initial_moves)
 end
 
 
 # this should really be handled through memoization
 function generate_initial_board()
-	board = zeros(UInt8, 40*40)
+	board = zeros(UInt8, 40 * 40)
 
-  # iterate over the
+	# iterate over the
 	for move in initial_moves()
 		delta_x, delta_y = direction_offset[move.direction]
 
@@ -133,7 +133,7 @@ function generate_initial_board()
 			y = move.start_y + delta_y * i
 
 			if x != move.x || y != move.y
-				board[board_index(x,y)] = mask_x
+				board[board_index(x, y)] = mask_x
 			end
 		end
 	end
@@ -141,29 +141,29 @@ function generate_initial_board()
 end
 initial_board_master = generate_initial_board();
 function initial_board()
-  copy(initial_board_master)
+	copy(initial_board_master)
 end
 
 
 struct MorpionEvaluator
 	morpion::Morpion
-	possible_moves::Array{Move,1}
-	board::Array{UInt8,1}
+	possible_moves::Array{Move, 1}
+	board::Array{UInt8, 1}
 end
 
-MorpionEvaluator() = MorpionEvaluator(Morpion(),initial_moves(),initial_board())
+MorpionEvaluator() = MorpionEvaluator(Morpion(), initial_moves(), initial_board())
 
 function morpion_evaluator(morpion::Morpion)
 	evaluator = MorpionEvaluator()
 	for move in morpion.moves
-		make_move(evaluator,move)
+		make_move(evaluator, move)
 	end
 
 	evaluator
 end
 
 function copy(evaluator::MorpionEvaluator)
-	MorpionEvaluator(copy(evaluator.morpion),copy(evaluator.possible_moves),copy(evaluator.board))
+	MorpionEvaluator(copy(evaluator.morpion), copy(evaluator.possible_moves), copy(evaluator.board))
 end
 
 function random_completion(evaluator::MorpionEvaluator)
@@ -177,18 +177,18 @@ end
 function find_loose_moves(evaluator::MorpionEvaluator)
 	loose_moves = Move[]
 
-	points_board = zeros(UInt8, 40*40)
+	points_board = zeros(UInt8, 40 * 40)
 
 	for move in evaluator.morpion.moves
-		board_value = evaluator.board[board_index(move.x,move.y)]
+		board_value = evaluator.board[board_index(move.x, move.y)]
 		#0b00010
 		#0b00100
 		#0b01000
 		#0b10000
 		if board_value == 2 ||
-			board_value == 4 ||
-			board_value == 8 ||
-			board_value == 16
+		   board_value == 4 ||
+		   board_value == 8 ||
+		   board_value == 16
 
 			#println("$(move) $(board_value)")
 			push!(loose_moves, move)
@@ -201,12 +201,12 @@ function find_loose_moves(evaluator::MorpionEvaluator)
 			curr_x = move.start_x + delta_x * offset
 			curr_y = move.start_y + delta_y * offset
 
-			points_board[board_index(curr_x,curr_y)] += 1
+			points_board[board_index(curr_x, curr_y)] += 1
 		end
 	end
 
 	filter!(loose_moves) do loose_move
-		points_board[board_index(loose_move.x,loose_move.y)] == 1
+		points_board[board_index(loose_move.x, loose_move.y)] == 1
 	end
 
 	loose_moves
@@ -241,7 +241,7 @@ function validate_line(board, x, y, direction)
 
 
 		#value = get(board, (curr_x, curr_y), 0)
-		value = board[board_index(curr_x,curr_y)]
+		value = board[board_index(curr_x, curr_y)]
 
 		empty = value == 0
 
@@ -273,8 +273,8 @@ function validate_line(board, x, y, direction)
 		#println(" point: $curr_x, $curr_y ($(bits(value)))  $empty $available $end_point ($(before_contains_direction),$(after_contains_direction)))")
 
 		if ce == 1 && ca == 3 && cd == 1 && (index_d == 0 || index_d == 4) ||
-			ce == 1 && ca == 4 ||
-			ce == 1 && ca == 2 && cd == 2
+		   ce == 1 && ca == 4 ||
+		   ce == 1 && ca == 2 && cd == 2
 
 			#new_move = Move(empty_x, empty_y, move.x + delta_x * offset, move.y + delta_y * offset, direction)
 
@@ -291,22 +291,22 @@ function validate_line(board, x, y, direction)
 	#println()
 
 	#corrolaries
-#	occupied = value & mask_x != 0
-#	contains_direction = board[x + 16, y + 16] & mask_dir[direction] != 0
-#	before_contains_direction = board[x - delta_x + 16, y - delta_x + 16] & mask_dir[direction] != 0
-#	after_contains_direction = board[x + delta_x + 16, y + delta_x + 16] & mask_dir[direction] != 0
+	#	occupied = value & mask_x != 0
+	#	contains_direction = board[x + 16, y + 16] & mask_dir[direction] != 0
+	#	before_contains_direction = board[x - delta_x + 16, y - delta_x + 16] & mask_dir[direction] != 0
+	#	after_contains_direction = board[x + delta_x + 16, y + delta_x + 16] & mask_dir[direction] != 0
 
 
 	#state transition definitions definitions
-#	empty = value == 0
-#	available = occupied && !contains_direction
-#	end_point = contains_direction && (before_contains_direction || after_contains_direction)
+	#	empty = value == 0
+	#	available = occupied && !contains_direction
+	#	end_point = contains_direction && (before_contains_direction || after_contains_direction)
 
 	move
 end
 
 
-function update_board(board::Array{UInt8,1}, move::Move)
+function update_board(board::Array{UInt8, 1}, move::Move)
 
 	#board[board_index(move.x, move.y)] |= mask_x
 
@@ -317,7 +317,7 @@ function update_board(board::Array{UInt8,1}, move::Move)
 		x = move.start_x + delta_x * i
 		y = move.start_y + delta_y * i
 
-		board[board_index(x,y)] |= mask_dir[move.direction]
+		board[board_index(x, y)] |= mask_dir[move.direction]
 
 	end
 end
@@ -422,14 +422,14 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 	push!(evaluator.possible_moves, move)
 
 	# update the board to reflect the removal of the move
-	evaluator.board[board_index(move.x,move.y)] &= ~mask_x
+	evaluator.board[board_index(move.x, move.y)] &= ~mask_x
 
 	delta_x, delta_y = direction_offset[move.direction]
 	for i in 0:4
 		x = move.start_x + delta_x * i
 		y = move.start_y + delta_y * i
 		#println("before ($x,$y): $(bits(evaluator.board[board_index(x,y)]))")
-		evaluator.board[board_index(x,y)] &= ~mask_dir[move.direction]
+		evaluator.board[board_index(x, y)] &= ~mask_dir[move.direction]
 		#println("after ($x,$y):  $(bits(evaluator.board[board_index(x,y)]))")
 	end
 
@@ -459,7 +459,7 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 			test_x = move.x + delta_x * offset
 			test_y = move.y + delta_y * offset
 
-			position = validate_line(evaluator.board, test_x , test_y, direction)
+			position = validate_line(evaluator.board, test_x, test_y, direction)
 
 			if position != ()
 
@@ -482,7 +482,7 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 		test_x = move.start_x + delta_x * offset
 		test_y = move.start_y + delta_y * offset
 
-		position = validate_line(evaluator.board, test_x , test_y, move.direction)
+		position = validate_line(evaluator.board, test_x, test_y, move.direction)
 
 		if position != ()
 			new_move = Move(position[1], position[2], test_x, test_y, move.direction)
@@ -498,7 +498,7 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 		test_x = move.start_x - delta_x * offset
 		test_y = move.start_y - delta_y * offset
 
-		position = validate_line(evaluator.board, test_x , test_y, move.direction)
+		position = validate_line(evaluator.board, test_x, test_y, move.direction)
 
 		if position != ()
 			new_move = Move(position[1], position[2], test_x, test_y, move.direction)
@@ -516,7 +516,7 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 	#filter!( (m::Move) -> validate_line(evaluator.board, m.start_x ,m.start_y , m.direction) != () , evaluator.possible_moves)
 
 	filter!(evaluator.possible_moves) do m::Move
-		t = validate_line(evaluator.board, m.start_x ,m.start_y , m.direction) != ()
+		t = validate_line(evaluator.board, m.start_x, m.start_y, m.direction) != ()
 
 		if !t
 			#println("removing: $(m)")
@@ -528,7 +528,7 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 
 end
 
-function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move, 1})
+function make_move(board::Array{UInt8, 1}, move::Move, possible_moves::Array{Move, 1})
 
 
 	#println("making: $move")
@@ -544,7 +544,7 @@ function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move
 	# TODO can these be done with one filter operation?
 	# EXPERIMENTAL
 	# deleteat!(possible_moves, findfirst(possible_moves, move))
-	filter!( (move::Move) -> validate_line(board, move.start_x ,move.start_y , move.direction) != () , possible_moves)
+	filter!((move::Move) -> validate_line(board, move.start_x, move.start_y, move.direction) != (), possible_moves)
 
 
 	for direction in 1:4
@@ -558,7 +558,7 @@ function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move
 			test_x = move.x + delta_x * offset
 			test_y = move.y + delta_y * offset
 
-			position = validate_line(board, test_x , test_y, direction)
+			position = validate_line(board, test_x, test_y, direction)
 
 			if position != ()
 
@@ -595,13 +595,13 @@ function base64hex(char::Char)
 	bits(enc)[(end-5):end]
 end
 
-function pack_binary(moves::Array{Move,1})
+function pack_binary(moves::Array{Move, 1})
 	b = ""
 
 	#verify(Morpion(moves))
 
-	taken_move_index = Dict{Move,Bool}()
-	taboo_moves = Dict{Move,Bool}()
+	taken_move_index = Dict{Move, Bool}()
+	taboo_moves = Dict{Move, Bool}()
 	possible_moves = initial_moves()
 	board = initial_board()
 
@@ -611,16 +611,16 @@ function pack_binary(moves::Array{Move,1})
 
 	while !isempty(possible_moves) && !isempty(taken_move_index)
 
-		poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves,possible_move), possible_moves)
+		poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves, possible_move), possible_moves)
 
 		#@assert !isempty(poss_moves) "$(possible_moves)"
 
-		sort!(poss_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+		sort!(poss_moves, by = (move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
 
 		for move in poss_moves
 
 			if haskey(taken_move_index, move)
-				b = string(b,"1")
+				b = string(b, "1")
 
 				#push!(taken_moves,move)
 				make_move(board, move, possible_moves)
@@ -629,7 +629,7 @@ function pack_binary(moves::Array{Move,1})
 
 			else
 				taboo_moves[move] = true
-				b = string(b,"0")
+				b = string(b, "0")
 			end
 		end
 	end
@@ -649,10 +649,10 @@ function generate_pack(morpion::Morpion)
 
 	for pos in 1:6:length(b)
 
-		hex = rpad(b[pos:min(length(b),pos+5)], 6, "0")
+		hex = rpad(b[pos:min(length(b), pos + 5)], 6, "0")
 
 		# index = parseint("0b"*hex) + 1
-		index = parse(Int, "0b"*hex) + 1
+		index = parse(Int, "0b" * hex) + 1
 
 		bin_pack *= string(base64_enc_table[index])
 	end
@@ -676,26 +676,26 @@ function unpack_binary(b::String)
 	possible_moves = initial_moves()
 	board = initial_board()
 
-	taboo_moves = Dict{Move,Bool}()
+	taboo_moves = Dict{Move, Bool}()
 	i = 1
 
 	moves = Move[]
 
-	sort!(possible_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+	sort!(possible_moves, by = (move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
 
 	while !isempty(possible_moves) && i <= length(b)
 
 		#collect all possible moves that don't appear in the taboo list
-		poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves,possible_move), possible_moves)
+		poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves, possible_move), possible_moves)
 
 		#@assert !isempty(poss_moves) "$(possible_moves)"
 
 		#sort in a consistent manner
-		sort!(poss_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+		sort!(poss_moves, by = (move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
 
 		for move in poss_moves
 			if b[i] == '1'
-				push!(moves,move)
+				push!(moves, move)
 				make_move(board, move, possible_moves)
 			else
 				taboo_moves[move] = true
@@ -714,26 +714,26 @@ function unpack_binary(b::String)
 	possible_moves = initial_moves()
 	board = initial_board()
 
-	taboo_moves = Dict{Move,Bool}()
+	taboo_moves = Dict{Move, Bool}()
 	i = 1
 
 	morpion = Morpion()
 
-	sort!(possible_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+	sort!(possible_moves, by = (move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
 
 	while !isempty(possible_moves) && i <= length(b)
 
 		#collect all possible moves that don't appear in the taboo list
-		poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves,possible_move), possible_moves)
+		poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves, possible_move), possible_moves)
 
 		#@assert !isempty(poss_moves) "$(possible_moves)"
 
 		#sort in a consistent manner
-		sort!(poss_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+		sort!(poss_moves, by = (move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
 
 		for move in poss_moves
 			if b[i] == '1'
-				push!(morpion.moves,move)
+				push!(morpion.moves, move)
 				make_move(board, move, possible_moves)
 			else
 				taboo_moves[move] = true
@@ -747,8 +747,8 @@ function unpack_binary(b::String)
 
 end
 
-function generate_dna(moves::Array{Move,1})
-	morpion_dna = zeros(Int, 40*40*4)
+function generate_dna(moves::Array{Move, 1})
+	morpion_dna = zeros(Int, 40 * 40 * 4)
 	i = 0
 	for move in moves
 		morpion_dna[dna_index(move)] = length(moves) + 1 - i
@@ -783,7 +783,7 @@ end
 # 	morpion
 # end
 
-function eval_dna(dna::Array{Int,1})
+function eval_dna(dna::Array{Int, 1})
 	board = initial_board()
 	possible_moves = initial_moves()
 	# morpion = Morpion()
@@ -792,7 +792,7 @@ function eval_dna(dna::Array{Int,1})
 	function eval_reducer(a::Move, b::Move)
 		a_value = dna[dna_index(a)]
 		b_value = dna[dna_index(b)]
-	
+
 		if (a_value == 0 && b_value == 0)
 			rand() > 0.5 ? a : b
 		else
@@ -826,17 +826,17 @@ function random_morpion()
 end
 
 function points_hash(morpion::Morpion)
-	hash(sort(map( (move) -> (move.x,move.y), morpion.moves)))
+	hash(sort(map((move) -> (move.x, move.y), morpion.moves)))
 end
 
-function points_hash(moves::Array{Move,1})
-	hash(sort(map( (move) -> (move.x,move.y), moves)))
+function points_hash(moves::Array{Move, 1})
+	hash(sort(map((move) -> (move.x, move.y), moves)))
 end
 
 function end_search(morpion::Morpion, trials::Number)
 	evaluator = morpion_evaluator(copy(morpion))
 
-	index = Dict{UInt64,Bool}()
+	index = Dict{UInt64, Bool}()
 
 
 	min_accept = score(morpion) - 10
@@ -849,7 +849,7 @@ function end_search(morpion::Morpion, trials::Number)
 	new_found = Morpion[]
 
 
-	while score(evaluator.morpion) > score(morpion)/2 && step < timeout && new_found_count < max_new_found
+	while score(evaluator.morpion) > score(morpion) / 2 && step < timeout && new_found_count < max_new_found
 
 		#loose_moves = find_loose_moves(evaluator)
 
@@ -885,7 +885,7 @@ function end_search(morpion::Morpion, trials::Number)
 		step += 1
 	end
 
-	sort(new_found, by=(t)->score(t))
+	sort(new_found, by = (t) -> score(t))
 end
 
 function to_js(morpion::Morpion)
@@ -893,9 +893,9 @@ function to_js(morpion::Morpion)
 	join(
 		map(
 			(move) -> "$(move.x),$(move.y),$(move.start_x),$(move.start_y),$(direction_names[move.direction])",
-			morpion.moves
+			morpion.moves,
 		),
-		"|"
+		"|",
 	)
 
 end

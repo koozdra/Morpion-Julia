@@ -69,7 +69,7 @@ function main()
 
 	t = time()
 
-	end_searched = Dict{}()
+	end_searched = Dict{UInt64, Bool}()
 
 	index = Dict{UInt64, Tuple{Int, Array{Move, 1}}}()
 	index[points_hash(max_moves)] = (0, max_moves)
@@ -113,7 +113,7 @@ function main()
 		index[index_key] = (visits + 1, moves)
 		selected_score = length(moves)
 
-		if visits > (selected_score * 10) # || linger_counter > selected_score
+		if visits > (selected_score * 10)
 			current_index_key = rand(keys(index))
 			linger_counter = 0
 		else
