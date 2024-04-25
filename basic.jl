@@ -1,5 +1,15 @@
 import Base.hash
 include("morpion.jl")
+"""
+This is a search for Morpion solitaire configurations. It is an adaptive simulated annealing algorithm that increases temperature
+when no new configurations are being generated. This allows the algorithm to traverse the top of the search space, moving to adjacent
+good solutions.
+
+A preference array (a model) represents a configuration. This array has a preference for all possible lines.
+In a state, moves are mapped to preferences and the most prefered move is made.
+
+Finding adjacent solutions consists of evaluating a board position while making one of the moves have a very low preference.
+"""
 
 """
 Progressively remove moves from the end of the move array and randomly complete the grid.
@@ -53,35 +63,38 @@ function end_search(moves::Array{Move, 1})
 end
 
 function main()
+	# Start with a random configuration
 	max_moves = random_morpion()
 	max_score = length(max_moves)
 
+	# Hyperparameters
 	num_iterations_time = 100000
 	max_visits = 1000000
 
+	# State - Counters
 	step_back = 0
-
 	iteration = 0
 	num_new_generated_counter = 0
 	num_time_steps_no_new_generated_counter = 0
 	improvement_counter = 0
 	linger_counter = 0
-
+	select_new_item = false
+	index_max_score = max_score
 	t = time()
+	current_index_key = rand(keys(index))
 
+	# State - Indexes
+	# Store inferior solutions (based score) for later 
+	# use when temperature increases and back up is required
+	backup_index = Dict{UInt64, Array{Move, 1}}()
+	# When a configuration exceeds the number of searches allotted
+	# to each configuration, it becomes taboo and will not be
+	# explored in the futere
+	taboo_index = Dict{UInt64, Bool}()
+	# Keep track of which configurations have 
 	end_searched = Dict{UInt64, Bool}()
-
 	index = Dict{UInt64, Tuple{Int, Array{Move, 1}}}()
 	index[points_hash(max_moves)] = (0, max_moves)
-	index_max_score = max_score
-
-	backup_index = Dict{UInt64, Array{Move, 1}}()
-	taboo_index = Dict{UInt64, Bool}()
-
-	dna_cache = Dict{UInt64, Array{Int}}()
-
-	select_new_item = false
-	current_index_key = rand(keys(index))
 
 	while true
 
@@ -287,14 +300,11 @@ function main()
 			step_back = max(0, step_back - 1)
 			improvement_counter = 0
 
-
-
 			empty!(index)
 		end
 
 		iteration += 1
 	end
-
 end
 
 main()
