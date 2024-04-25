@@ -1,7 +1,7 @@
 import Base.hash
 include("morpion.jl")
 
-function end_search(moves::Move[])
+function end_search(moves::Array{Move, 1})
 	score = length(moves)
 	back_accept_modifier = -5
 
@@ -58,8 +58,8 @@ function main()
 
 	step_back = 0
 
-	backup_accept_score_modifier = -step_back
-	index_backup_accept_modifier = -step_back
+
+
 
 	iteration = 0
 	num_new_generated_counter = 0
@@ -93,7 +93,7 @@ function main()
 			for key in collect(keys(backup_index))
 				moves = backup_index[key]
 				if !haskey(taboo_index, key)
-					if length(moves) >= (max_backup_score + index_backup_accept_modifier)
+					if length(moves) >= (max_backup_score - step_back)
 						index[key] = (0, moves)
 
 					end
@@ -152,8 +152,8 @@ function main()
 
 				step_back = 0
 
-				backup_accept_score_modifier = -step_back
-				index_backup_accept_modifier = -step_back
+
+
 
 				improvement_counter = 0
 			end
@@ -165,7 +165,7 @@ function main()
 						backup_index[eval_points_hash] = eval_moves
 					end
 
-					if (eval_score >= index_max_score + backup_accept_score_modifier)
+					if (eval_score >= index_max_score - step_back)
 						backup_index[eval_points_hash] = eval_moves
 						index[eval_points_hash] = (0, eval_moves)
 
@@ -176,7 +176,7 @@ function main()
 						num_new_generated_counter += 1
 					end
 
-					if eval_score > (index_max_score + backup_accept_score_modifier)
+					if eval_score > (index_max_score - step_back)
 						improvement_counter += 1
 					end
 				end
@@ -201,9 +201,6 @@ function main()
 				if num_time_steps_no_new_generated_counter == 2
 					step_back += 1
 
-					backup_accept_score_modifier = -step_back
-					index_backup_accept_modifier = -step_back
-
 					empty!(index)
 					num_time_steps_no_new_generated_counter = 0
 				end
@@ -218,8 +215,8 @@ function main()
 
 		if iteration > 0 && iteration % 10000000 == 0
 			step_back = 0
-			backup_accept_score_modifier = -step_back
-			index_backup_accept_modifier = -step_back
+
+
 			empty!(index)
 			empty!(end_searched)
 		end
@@ -247,7 +244,7 @@ function main()
 
 					if !is_in_index
 
-						if (found_score >= index_max_score + backup_accept_score_modifier)
+						if (found_score >= index_max_score - step_back)
 							backup_index[found_index_key] = found_moves
 							index[found_index_key] = (0, found_moves)
 
@@ -256,7 +253,7 @@ function main()
 							println("$iteration.  es $selected_score > $found_score (impr: $improvement_counter)")
 						end
 
-						if found_score > (index_max_score + backup_accept_score_modifier)
+						if found_score > (index_max_score - step_back)
 							improvement_counter += 1
 						end
 
@@ -288,8 +285,8 @@ function main()
 		if improvement_counter >= 10
 			step_back = max(0, step_back - 1)
 			improvement_counter = 0
-			backup_accept_score_modifier = -step_back
-			index_backup_accept_modifier = -step_back
+
+
 
 			empty!(index)
 		end
