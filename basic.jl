@@ -1,11 +1,15 @@
 import Base.hash
 include("morpion.jl")
 
+"""
+Progressively remove moves from the end of the move array and randomly complete the grid.
+Maintain a points index and return unique points configuration grid.
+"""
 function end_search(moves::Array{Move, 1})
 	score = length(moves)
 	back_accept_modifier = -5
 
-	index = Dict{}()
+	index = Dict{UInt64, Array{Move, 1}}()
 
 	total_ops = 0
 
@@ -58,9 +62,6 @@ function main()
 
 	step_back = 0
 
-
-
-
 	iteration = 0
 	num_new_generated_counter = 0
 	num_time_steps_no_new_generated_counter = 0
@@ -75,8 +76,6 @@ function main()
 	index[points_hash(max_moves)] = (0, max_moves)
 	index_max_score = max_score
 
-
-
 	backup_index = Dict{UInt64, Array{Move, 1}}()
 	taboo_index = Dict{UInt64, Bool}()
 
@@ -87,26 +86,26 @@ function main()
 
 	while true
 
+		# If the index is empty look into the backup and rebuild the index
+		# based on the highest backup score
 		if isempty(keys(index))
-			max_backup_score = maximum(p -> length(p[2]), backup_index)
+			index_max_score = maximum(p -> length(p[2]), backup_index)
 
 			for key in collect(keys(backup_index))
 				moves = backup_index[key]
 				if !haskey(taboo_index, key)
-					if length(moves) >= (max_backup_score - step_back)
+					if length(moves) >= (index_max_score - step_back)
 						index[key] = (0, moves)
-
 					end
 				end
 			end
-
-			index_max_score = max_backup_score
 		end
 
 		if !haskey(index, current_index_key)
 			current_index_key = rand(keys(index))
 		end
 
+		# Selecteion
 		index_key = current_index_key
 
 		(visits, moves) = index[index_key]
@@ -120,11 +119,13 @@ function main()
 			linger_counter += 1
 		end
 
+		# Modification
 		test_dna = generate_dna(moves)
 
 		visit_move = moves[(visits%length(moves))+1]
 		test_dna[dna_index(visit_move)] = 0
 
+		# Evaluation
 		eval_moves = eval_dna(test_dna)
 		eval_score = length(eval_moves)
 
@@ -145,47 +146,44 @@ function main()
 
 		if !is_in_taboo
 
+			# A new global high score has been found
 			if eval_score > max_score
 				println("$iteration. ******* $eval_score")
 				max_score = eval_score
 				max_moves = eval_moves
 
 				step_back = 0
-
-
-
-
 				improvement_counter = 0
 			end
 
-			if !is_in_index
+			if !is_in_index && !is_in_backup
 
-				if !is_in_backup
-					if (eval_score >= index_max_score - 5)
-						backup_index[eval_points_hash] = eval_moves
-					end
 
-					if (eval_score >= index_max_score - step_back)
-						backup_index[eval_points_hash] = eval_moves
-						index[eval_points_hash] = (0, eval_moves)
-
-						index[index_key] = (0, moves)
-
-						println("$iteration. $selected_score ($visits) > $eval_score (impr: $improvement_counter)")
-
-						num_new_generated_counter += 1
-					end
-
-					if eval_score > (index_max_score - step_back)
-						improvement_counter += 1
-					end
+				if (eval_score >= index_max_score - 5)
+					backup_index[eval_points_hash] = eval_moves
 				end
 
-				if eval_score > index_max_score
-					empty!(index)
+				if (eval_score >= index_max_score - step_back)
+					backup_index[eval_points_hash] = eval_moves
+					index[eval_points_hash] = (0, eval_moves)
+
+					index[index_key] = (0, moves)
+
+					println("$iteration. $selected_score ($visits) > $eval_score (impr: $improvement_counter)")
+
+					num_new_generated_counter += 1
 				end
 
+				if eval_score > (index_max_score - step_back)
+					improvement_counter += 1
+				end
 			end
+
+			if eval_score > index_max_score
+				empty!(index)
+			end
+
+
 		end
 
 		if iteration > 0 && iteration % num_iterations_time == 0
