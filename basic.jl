@@ -212,7 +212,7 @@ function main()
 			)
 
 			# If this round we have only generated a few configurations
-			if num_new_generated_counter <= 3
+			if num_new_generated_counter <= 1
 				num_time_steps_no_new_generated_counter += 1
 
 				# If we have reached the idle number of time steps that it makes sense to drop back
@@ -232,7 +232,7 @@ function main()
 		end
 
 		# Occasionally restart the search from the top
-		if iteration > 0 && iteration % 10000000 == 0
+		if iteration > 0 && iteration % 100000000 == 0
 			step_back = 0
 			empty!(index)
 			# empty!(end_searched)
@@ -288,7 +288,7 @@ function main()
 		# If we have exceeded the number of searches each grid can have
 		# remove the grid from the index
 		if visits > max_visits
-			taboo_index[index_key] = true
+			taboo_index[indiex_key] = true
 			delete!(index, index_key)
 			delete!(backup_index, index_key)
 
@@ -302,7 +302,7 @@ function main()
 			println("$iteration. -$(length(moves)) index:$(length(index)) index_max:$index_max_score")
 		end
 
-		if improvement_counter >= 10
+		if improvement_counter >= 1
 			step_back = max(0, step_back - 1)
 			improvement_counter = 0
 
