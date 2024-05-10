@@ -65,11 +65,11 @@ function isless(a::Morpion, b::Morpion)
 end
 
 function board_index(x::Number, y::Number)
-	(x + 15) * 40 + (y + 15)
+	(x + 18) * 46 + (y + 18)
 end
 
 function dna_index(x::Number, y::Number, direction::Number)
-	(x + 15) * 40 * 4 + (y + 15) * 4 + direction
+	(x + 18) * 46 * 4 + (y + 18) * 4 + direction
 end
 
 function dna_index(move::Move)
@@ -122,7 +122,7 @@ end
 
 # this should really be handled through memoization
 function generate_initial_board()
-	board = zeros(UInt8, 40 * 40)
+	board = zeros(UInt8, 46 * 46)
 
 	# iterate over the
 	for move in initial_moves()
@@ -177,7 +177,7 @@ end
 function find_loose_moves(evaluator::MorpionEvaluator)
 	loose_moves = Move[]
 
-	points_board = zeros(UInt8, 40 * 40)
+	points_board = zeros(UInt8, 46 * 46)
 
 	for move in evaluator.morpion.moves
 		board_value = evaluator.board[board_index(move.x, move.y)]
@@ -748,7 +748,7 @@ function unpack_binary(b::String)
 end
 
 function generate_dna(moves::Array{Move, 1})
-	morpion_dna = zeros(Int, 40 * 40 * 4)
+	morpion_dna = zeros(Int, 46 * 46 * 4)
 	i = 0
 	for move in moves
 		morpion_dna[dna_index(move)] = length(moves) + 1 - i
@@ -759,7 +759,7 @@ function generate_dna(moves::Array{Move, 1})
 end
 
 # function generate_dna(morpion::Morpion)
-# 	morpion_dna = rand(40*40*4)
+# 	morpion_dna = rand(46*46*4)
 # 	i = 0
 # 	for move in morpion.moves
 # 		morpion_dna[dna_index(move)] = length(morpion.moves) + 1 - i
