@@ -748,7 +748,7 @@ function unpack_binary(b::String)
 end
 
 function generate_dna(moves::Array{Move, 1})
-	morpion_dna = zeros(Int, 46 * 46 * 4)
+	morpion_dna = zeros(UInt8, 46 * 46 * 4)
 	i = 0
 	for move in moves
 		morpion_dna[dna_index(move)] = length(moves) + 1 - i
@@ -756,6 +756,38 @@ function generate_dna(moves::Array{Move, 1})
 	end
 
 	morpion_dna
+end
+
+# add a dropout attribute that will randomely drop n elements
+# to combine the generation and the modification step
+function generate_move_preferances(moves::Array{Move, 1})
+	Dict(move => UInt8(index) for (index, move) in enumerate(reverse(moves)))
+end
+
+function eval_move_preferences(preferences::Dict{Move, UInt8})
+	board = initial_board()
+	possible_moves = initial_moves()
+	moves = Move[]
+
+	function eval_reducer(a::Move, b::Move)
+		a_value = haskey(preferences, a) ? preferences[a] : 0
+		b_value = haskey(preferences, b) ? preferences[b] : 0
+
+		if (a_value == 0 && b_value == 0)
+			rand() > 0.5 ? a : b
+		else
+			a_value > b_value ? a : b
+		end
+	end
+
+	while !isempty(possible_moves)
+		# move = reduce( (a,b) -> (dna[dna_index(a)] > dna[dna_index(b)]) ? a : b, possible_moves)
+		move = reduce(eval_reducer, possible_moves)
+		push!(moves, move)
+		make_move(board, move, possible_moves)
+	end
+
+	moves
 end
 
 # function generate_dna(morpion::Morpion)
@@ -783,7 +815,7 @@ end
 # 	morpion
 # end
 
-function eval_dna(dna::Array{Int, 1})
+function eval_dna(dna::Array{UInt8, 1})
 	board = initial_board()
 	possible_moves = initial_moves()
 	# morpion = Morpion()

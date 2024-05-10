@@ -85,6 +85,8 @@ function main()
 	index = Dict{UInt64, Tuple{Int, Array{Move, 1}}}()
 	index[points_hash(max_moves)] = (0, max_moves)
 
+	dna_cache = Dict{UInt64, Array{UInt8, 1}}()
+
 	# State - Counters
 	step_back = 0
 	iteration = 0
@@ -133,17 +135,34 @@ function main()
 		# 	linger_counter += 1
 		# end
 
-		# Modification
-		test_dna = generate_dna(moves)
-
 		visit_move = moves[(visits%length(moves))+1]
-		test_dna[dna_index(visit_move)] = 0
 
+
+
+		# Generation
+		# prefs = generate_move_preferances(moves)
+
+		if !haskey(dna_cache, index_key)
+			dna_cache[index_key] = generate_dna(moves)
+		end
+		test_dna = copy(dna_cache[index_key])
+
+		# test_dna = generate_dna(moves)
+
+		# Modification
+		# delete!(prefs, visit_move)
+		# for i in rand(1:10)
+		# 	delete!(prefs, rand(keys(prefs)))
+		# end
+
+		test_dna[dna_index(visit_move)] = 0
 		for i in rand(1:10)
 			test_dna[dna_index(moves[rand(1:end)])] = 0
 		end
 
 		# Evaluation
+
+		# eval_moves = eval_move_preferences(prefs)
 		eval_moves = eval_dna(test_dna)
 		eval_score = length(eval_moves)
 
@@ -242,6 +261,8 @@ function main()
 		if iteration > 0 && iteration % 10000000 == 0
 			println(max_score)
 			println(max_moves)
+
+			empty!(dna_cache)
 		end
 
 		# End Search
