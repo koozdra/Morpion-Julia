@@ -141,8 +141,8 @@ function main()
 
 		# Selecteion
 		# index_key = current_index_key
-		# index_key = candidates[(iteration%length(candidates))+1]
-		index_key = rand(candidates)
+		index_key = candidates[(iteration%length(candidates))+1]
+		# index_key = rand(candidates)
 
 		(visits, moves) = index[index_key]
 		index[index_key] = (visits + 1, moves)
@@ -266,7 +266,7 @@ function main()
 				num_time_steps_no_new_generated_counter += 1
 
 				# If we have reached the idle number of time steps that it makes sense to drop back
-				if num_time_steps_no_new_generated_counter >= 5
+				if num_time_steps_no_new_generated_counter >= 10
 					step_back += 1
 
 					empty!(index)
