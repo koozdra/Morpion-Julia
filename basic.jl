@@ -62,6 +62,14 @@ function end_search(moves::Array{Move, 1})
 	index
 end
 
+function memoize_points_hash(moves::Array{Move, 1}, cache::Dict{UInt64, UInt64})
+	hash_key = hash(moves)
+	if !haskey(cache, hash_key)
+		cache[hash_key] = points_hash(moves)
+	end
+	return cache[hash_key]
+end
+
 function main()
 	# Start with a random configuration
 	max_moves = random_morpion()
@@ -87,6 +95,8 @@ function main()
 
 	candidates = [points_hash(max_moves)]
 
+	points_hash_cache = Dict{UInt64, UInt64}()
+
 	dna_cache = Dict{UInt64, Array{UInt8, 1}}()
 
 	# State - Counters
@@ -101,11 +111,14 @@ function main()
 	t = time()
 	current_index_key = rand(keys(index))
 
+	empty_board = initial_board()
+	empty_start_moves = initial_moves()
+
 	while true
 
 		# If the index is empty look into the backup and rebuild the index
 		# based on the highest backup score
-		if isempty(keys(index))
+		if isempty(index)
 			index_max_score = maximum(p -> length(p[2]), backup_index)
 
 			candidates = []
@@ -128,7 +141,8 @@ function main()
 
 		# Selecteion
 		# index_key = current_index_key
-		index_key = candidates[(iteration%length(candidates))+1]
+		# index_key = candidates[(iteration%length(candidates))+1]
+		index_key = rand(candidates)
 
 		(visits, moves) = index[index_key]
 		index[index_key] = (visits + 1, moves)
@@ -149,6 +163,7 @@ function main()
 
 
 
+
 		# Generation
 		# prefs = generate_move_preferances(moves)
 
@@ -166,17 +181,18 @@ function main()
 		# end
 
 		test_dna[dna_index(visit_move)] = 0
-		for i in rand(1:5)
+		for i in rand(0:4)
 			test_dna[dna_index(moves[rand(1:end)])] = 0
 		end
 
 		# Evaluation
 
 		# eval_moves = eval_move_preferences(prefs)
-		eval_moves = eval_dna(test_dna)
+		eval_moves = eval_dna(test_dna, copy(empty_board), copy(empty_start_moves))
 		eval_score = length(eval_moves)
 
-		eval_points_hash = points_hash(eval_moves)
+		# eval_points_hash = points_hash(eval_moves)
+		eval_points_hash = memoize_points_hash(eval_moves, points_hash_cache)
 
 		if haskey(dna_cache, eval_points_hash)
 			dna_cache[eval_points_hash] = generate_dna(eval_moves)
@@ -250,7 +266,7 @@ function main()
 				num_time_steps_no_new_generated_counter += 1
 
 				# If we have reached the idle number of time steps that it makes sense to drop back
-				if num_time_steps_no_new_generated_counter >= 10
+				if num_time_steps_no_new_generated_counter >= 5
 					step_back += 1
 
 					empty!(index)
@@ -278,6 +294,7 @@ function main()
 			println(max_moves)
 
 			empty!(dna_cache)
+			empty!(points_hash_cache)
 		end
 
 		# End Search

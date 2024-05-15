@@ -64,15 +64,15 @@ function isless(a::Morpion, b::Morpion)
 	score(a) < score(b)
 end
 
-function board_index(x::Number, y::Number)
+@inline function board_index(x::Number, y::Number)
 	(x + 18) * 46 + (y + 18)
 end
 
-function dna_index(x::Number, y::Number, direction::Number)
+@inline function dna_index(x::Number, y::Number, direction::Number)
 	(x + 18) * 46 * 4 + (y + 18) * 4 + direction
 end
 
-function dna_index(move::Move)
+@inline function dna_index(move::Move)
 	dna_index(move.start_x, move.start_y, move.direction)
 end
 
@@ -323,7 +323,7 @@ function update_board(board::Array{UInt8, 1}, move::Move)
 end
 
 
-function make_move(evaluator::MorpionEvaluator, move::Move)
+@inline function make_move(evaluator::MorpionEvaluator, move::Move)
 
 	push!(evaluator.morpion.moves, move)
 	make_move(evaluator.board, move, evaluator.possible_moves)
@@ -528,7 +528,7 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 
 end
 
-function make_move(board::Array{UInt8, 1}, move::Move, possible_moves::Array{Move, 1})
+@inline function make_move(board::Array{UInt8, 1}, move::Move, possible_moves::Array{Move, 1})
 
 
 	#println("making: $move")
@@ -747,7 +747,7 @@ function unpack_binary(b::String)
 
 end
 
-function generate_dna(moves::Array{Move, 1})
+@inline function generate_dna(moves::Array{Move, 1})
 	morpion_dna = zeros(UInt8, 46 * 46 * 4)
 	i = 0
 	for move in moves
@@ -815,9 +815,15 @@ end
 # 	morpion
 # end
 
-function eval_dna(dna::Array{UInt8, 1})
-	board = initial_board()
-	possible_moves = initial_moves()
+
+@inline function eval_dna(dna::Array{UInt8, 1})
+	eval_dna(dna, initial_board(), initial_moves())
+end
+
+
+@inline function eval_dna(dna::Array{UInt8, 1}, board, possible_moves)
+	# board = initial_board()
+	# possible_moves = initial_moves()
 	# morpion = Morpion()
 	moves = Move[]
 
