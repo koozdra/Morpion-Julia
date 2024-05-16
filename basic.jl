@@ -80,9 +80,6 @@ function main()
 	max_visits = 1000000
 
 	# State - Indexes
-	# Store inferior solutions (based score) for later 
-	# use when temperature increases and back up is required
-	backup_index = Dict{UInt64, Array{Move, 1}}()
 	# When a configuration exceeds the number of searches allotted
 	# to each configuration, it becomes taboo and will not be
 	# explored in the futere
@@ -118,100 +115,54 @@ function main()
 
 		# If the index is empty look into the backup and rebuild the index
 		# based on the highest backup score
-		if isempty(index)
-			index_max_score = maximum(p -> length(p[2]), backup_index)
+		if isempty(candidates)
+			index_max_score = maximum(p -> length(p[2][2]), index)
 
-			candidates = []
-
-			for key in collect(keys(backup_index))
-				moves = backup_index[key]
-				# if !haskey(taboo_index, key)
+			for key in collect(keys(index))
+				(visits, moves) = index[key]
 				if length(moves) >= (index_max_score - step_back)
-					# if length(moves) == (index_max_score - step_back)
-					index[key] = (0, moves)
 					push!(candidates, key)
 				end
-				# end
 			end
 		end
 
-		# if !haskey(index, current_index_key)
-		# 	current_index_key = rand(keys(index))
-		# end
-
 		# Selecteion
-		# index_key = current_index_key
 		index_key = candidates[(iteration%length(candidates))+1]
-		# index_key = rand(candidates)
 
 		(visits, moves) = index[index_key]
 		index[index_key] = (visits + 1, moves)
 		selected_score = length(moves)
 
-		# current_index_key = rand(keys(index))
-
-		# current_index_key = candidates[rand(1:end)]
-
-		# if linger_counter < selected_score
-		# 	current_index_key = rand(keys(index))
-		# 	linger_counter = 0
-		# else
-		# 	linger_counter += 1
-		# end
-
 		visit_move = moves[(visits%length(moves))+1]
 
-
-
-
 		# Generation
-		# prefs = generate_move_preferances(moves)
-
 		if !haskey(dna_cache, index_key)
 			dna_cache[index_key] = generate_dna(moves)
 		end
 		test_dna = copy(dna_cache[index_key])
 
-		# test_dna = generate_dna(moves)
-
 		# Modification
-		# delete!(prefs, visit_move)
-		# for i in rand(1:10)
-		# 	delete!(prefs, rand(keys(prefs)))
-		# end
-
 		test_dna[dna_index(visit_move)] = 0
 		for i in rand(0:4)
 			test_dna[dna_index(moves[rand(1:end)])] = 0
 		end
 
 		# Evaluation
-
-		# eval_moves = eval_move_preferences(prefs)
 		eval_moves = eval_dna(test_dna, copy(empty_board), copy(empty_start_moves))
 		eval_score = length(eval_moves)
 
-		# eval_points_hash = points_hash(eval_moves)
 		eval_points_hash = memoize_points_hash(eval_moves, points_hash_cache)
 
 		if haskey(dna_cache, eval_points_hash)
 			dna_cache[eval_points_hash] = generate_dna(eval_moves)
 		end
 
-		# is_in_taboo = haskey(taboo_index, eval_points_hash)
 		is_in_index = haskey(index, eval_points_hash)
-		is_in_backup = haskey(backup_index, eval_points_hash)
-
-		if is_in_backup
-			backup_index[eval_points_hash] = eval_moves
-		end
 
 		if is_in_index
 			(v, m) = index[eval_points_hash]
 			index[eval_points_hash] = (v, eval_moves)
 		end
-
-		# if !is_in_taboo
 
 		# A new global high score has been found
 		if eval_score > max_score
@@ -224,15 +175,14 @@ function main()
 		end
 
 		# If a new configuration is found
-		if !is_in_index && !is_in_backup
+		if !is_in_index
 
 			# Good scores are stored in the back up 
-			if (eval_score >= index_max_score - 5)
-				backup_index[eval_points_hash] = eval_moves
+			if (eval_score >= index_max_score - 10)
+				index[eval_points_hash] = (0, eval_moves)
 			end
 
 			if (eval_score >= index_max_score - step_back)
-				backup_index[eval_points_hash] = eval_moves
 				index[eval_points_hash] = (0, eval_moves)
 
 				# index[index_key] = (0, moves)
@@ -249,16 +199,15 @@ function main()
 		end
 
 		if eval_score > index_max_score
-			empty!(index)
+			candidates = []
 		end
-		# end
 
 		# Occasional print the status of the current run (time step)
 		if iteration > 0 && iteration % num_iterations_time == 0
 			dt = time() - t
 
 			println(
-				"$iteration. index:$(length(index)) backup:$(length(backup_index)) impr:$improvement_counter new:$num_new_generated_counter new_generated:$num_new_generated_counter no_new:$num_time_steps_no_new_generated_counter $(index_max_score - step_back)/$index_max_score/$max_score $dt",
+				"$iteration. cand:$(length(candidates)) index:$(length(index)) impr:$improvement_counter new:$num_new_generated_counter new_generated:$num_new_generated_counter no_new:$num_time_steps_no_new_generated_counter $(index_max_score - step_back)/$index_max_score/$max_score $dt",
 			)
 
 			# If this round we have only generated a few configurations
@@ -269,7 +218,7 @@ function main()
 				if num_time_steps_no_new_generated_counter >= 3
 					step_back += 1
 
-					empty!(index)
+					candidates = []
 					num_time_steps_no_new_generated_counter = 0
 				end
 			else
@@ -284,8 +233,7 @@ function main()
 		# Occasionally restart the search from the top
 		if iteration > 0 && iteration % 100000000 == 0
 			step_back = 0
-			empty!(index)
-			# empty!(end_searched)
+			candidates = []
 		end
 
 		# Occasionally Print the high score and moves
@@ -309,24 +257,25 @@ function main()
 					found_moves = result_index[found_index_key]
 					found_score = length(found_moves)
 
-					if (found_score >= index_max_score - 5) && !haskey(backup_index, found_index_key)
-						backup_index[found_index_key] = found_moves
-					end
-
-					# If a new configuration is found
-					if !haskey(backup_index, found_index_key)
-						if (found_score >= index_max_score - step_back)
-							backup_index[found_index_key] = found_moves
+					if !haskey(index, found_index_key)
+						if (found_score >= index_max_score - 10)
 							index[found_index_key] = (0, found_moves)
-							push!(candidates, found_index_key)
-
-							found_new = true
-
-							println("$iteration.  es $selected_score > $found_score (impr: $improvement_counter)")
 						end
 
-						if found_score > (index_max_score - step_back)
-							improvement_counter += 1
+						# If a new configuration is found
+						if !haskey(index, found_index_key)
+							if (found_score >= index_max_score - step_back)
+								index[found_index_key] = (0, found_moves)
+								push!(candidates, found_index_key)
+
+								found_new = true
+
+								println("$iteration.  es $selected_score > $found_score (impr: $improvement_counter)")
+							end
+
+							if found_score > (index_max_score - step_back)
+								improvement_counter += 1
+							end
 						end
 					end
 				end
@@ -344,7 +293,7 @@ function main()
 		# if visits > max_visits
 		# 	# taboo_index[index_key] = true
 		# 	delete!(index, index_key)
-		# 	delete!(backup_index, index_key)
+
 
 		# 	if !isempty(index)
 		# 		new_index_max_score = maximum(p -> length(p[2][2]), index)
@@ -360,7 +309,7 @@ function main()
 			step_back = max(0, step_back - 1)
 			improvement_counter = 0
 
-			empty!(index)
+			candidates = []
 		end
 
 		iteration += 1
@@ -434,3 +383,5 @@ main()
 # Move[Move(4, 3, 0, 3, 2), Move(2, 9, 2, 9, 2), Move(2, 2, 0, 4, 1), Move(5, 3, 4, 3, 2), Move(0, 7, 0, 3, 4), Move(7, 0, 3, 0, 2), Move(6, 10, 6, 6, 4), Move(4, 8, 2, 6, 3), Move(3, 10, 3, 6, 4), Move(2, 7, 0, 5, 3), Move(4, 6, 0, 6, 2), Move(5, 6, 4, 6, 2), Move(5, 8, 3, 10, 1), Move(2, 8, 2, 8, 2), Move(2, 5, 2, 5, 4), Move(3, 4, 0, 7, 1), Move(3, 5, 3, 2, 4), Move(4, 4, 2, 6, 1), Move(5, 5, 2, 2, 3), Move(6, 4, 2, 8, 1), Move(6, 5, 6, 2, 4), Move(4, 7, 2, 9, 1), Move(7, 10, 3, 6, 3), Move(4, 5, 4, 3, 4), Move(1, 5, 0, 5, 2), Move(1, 7, 0, 7, 2), Move(4, 10, 0, 6, 3), Move(4, 11, 4, 7, 4), Move(5, 10, 3, 10, 2), Move(7, 7, 4, 10, 1), Move(1, 8, 0, 7, 3), Move(5, 4, 1, 8, 1), Move(5, 2, 5, 2, 4), Move(1, 4, 1, 4, 4), Move(4, 1, 0, 5, 1), Move(5, 7, 5, 6, 4), Move(8, 7, 4, 7, 2), Move(7, 5, 3, 9, 1), Move(8, 5, 4, 5, 2), Move(7, 4, 3, 0, 3), Move(8, 4, 4, 4, 2), Move(9, 8, 5, 4, 3), Move(7, 2, 7, 2, 4), Move(4, -1, 4, -1, 3), Move(4, 2, 3, 2, 2), Move(8, 2, 8, 2, 4), Move(4, -2, 4, -2, 4), Move(7, 8, 4, 11, 1), Move(7, 9, 7, 6, 4), Move(8, 10, 4, 6, 3), Move(8, -1, 4, 3, 1), Move(2, 4, 0, 6, 1), Move(-1, 4, -1, 4, 2), Move(2, 0, 2, 0, 3), Move(8, 9, 4, 5, 3), Move(8, 8, 8, 6, 4), Move(10, 8, 6, 8, 2), Move(9, 7, 6, 4, 3), Move(9, 9, 9, 5, 4), Move(10, 10, 6, 6, 3), Move(10, 9, 6, 9, 2), Move(10, 6, 6, 10, 1), Move(10, 7, 10, 6, 4), Move(11, 7, 7, 3, 3), Move(12, 6, 8, 10, 1), Move(12, 7, 8, 7, 2), Move(11, 6, 8, 6, 2), Move(10, 5, 8, 3, 3), Move(12, 5, 8, 9, 1), Move(11, 5, 8, 5, 2), Move(10, 4, 8, 2, 3), Move(-1, 2, -1, 2, 3), Move(2, 1, 2, 1, 4), Move(1, 2, -1, 4, 1), Move(0, 2, -1, 2, 2), Move(-1, 1, -1, 1, 3), Move(11, 8, 7, 4, 3), Move(11, 4, 11, 4, 4), Move(12, 3, 8, 7, 1), Move(12, 4, 8, 4, 2), Move(12, 2, 12, 2, 4), Move(11, 3, 8, 6, 1), Move(10, 3, 8, 3, 2), Move(11, 2, 7, 6, 1), Move(10, 2, 10, 2, 4), Move(11, 1, 7, 5, 1), Move(11, 0, 11, 0, 4), Move(9, 2, 7, 2, 2), Move(8, 1, 8, 1, 3), Move(10, 1, 6, 5, 1), Move(9, 1, 9, 1, 4), Move(10, 0, 6, 4, 1), Move(8, 0, 8, 0, 3), Move(7, 1, 7, 1, 2), Move(5, 1, 3, 1, 2), Move(3, -1, 3, -1, 3), Move(3, -2, 3, -2, 4), Move(5, -1, 4, -2, 3), Move(9, 0, 7, 0, 2), Move(10, -1, 6, 3, 1), Move(10, -2, 10, -2, 4), Move(9, -1, 6, 2, 1), Move(8, -2, 8, -2, 3), Move(7, -1, 4, 2, 1), Move(6, -1, 3, -1, 2), Move(6, -2, 6, -2, 4), Move(7, -2, 7, -2, 4), Move(6, -3, 6, -3, 3), Move(8, -3, 4, 1, 1), Move(11, -1, 7, -1, 2), Move(9, -2, 6, -2, 2), Move(9, -3, 9, -3, 4), Move(5, -2, 5, -2, 4), Move(2, -2, 2, -2, 2), Move(7, -4, 3, 0, 1), Move(8, -4, 8, -4, 4), Move(7, -3, 4, 0, 1), Move(5, -3, 5, -3, 2), Move(7, -5, 7, -5, 3), Move(4, -4, 4, -4, 3), Move(6, -4, 3, -1, 1), Move(7, -6, 7, -6, 4), Move(5, -4, 4, -4, 2), Move(4, -3, 4, -3, 3), Move(6, -5, 3, -2, 1), Move(5, -6, 5, -6, 3), Move(5, -5, 5, -6, 4), Move(4, -6, 4, -6, 3), Move(4, -5, 4, -6, 4), Move(3, -5, 3, -5, 2), Move(6, -6, 6, -6, 4), Move(3, -3, 2, -2, 1), Move(3, -6, 3, -6, 2), Move(3, -4, 3, -6, 4), Move(2, -7, 2, -7, 3), Move(1, 0, 1, 0, 3), Move(1, 1, 1, 0, 4), Move(0, 1, -1, 1, 2), Move(2, -1, -1, 2, 1), Move(2, -3, 2, -3, 4), Move(-1, 3, -1, 3, 1), Move(-2, 2, -2, 2, 3), Move(1, -3, 1, -3, 2), Move(1, -2, 1, -2, 1), Move(-1, 0, -1, 0, 3), Move(0, 0, -1, 0, 2), Move(0, -1, 0, -1, 4), Move(1, -1, -2, 2, 1), Move(-1, -1, -1, -1, 2), Move(-2, -2, -2, -2, 3), Move(-1, -2, -1, -2, 4), Move(1, -4, 1, -4, 4), Move(0, -5, 0, -5, 3), Move(0, -2, -2, -2, 2), Move(2, -4, 0, -2, 1), Move(0, -4, 0, -4, 2), Move(-1, -5, -1, -5, 3), Move(0, -3, 0, -5, 4), Move(-1, -4, -1, -4, 3), Move(2, -5, -1, -2, 1), Move(1, -5, -1, -5, 2), Move(0, -6, 0, -6, 3), Move(2, -6, 2, -7, 4), Move(-1, -3, -2, -2, 1), Move(-1, -6, -1, -6, 4), Move(1, -6, -1, -6, 2), Move(-2, -3, -2, -3, 1), Move(-3, -3, -3, -3, 2), Move(0, -7, 0, -7, 3), Move(-2, -4, -2, -4, 3), Move(1, -7, -3, -3, 1), Move(1, -8, 1, -8, 4), Move(0, -8, 0, -8, 3), Move(0, -9, 0, -9, 4), Move(-3, -4, -3, -4, 3), Move(-2, -5, -3, -4, 1), Move(-2, -1, -2, -5, 4), Move(-4, -4, -4, -4, 2)]
 # 178
 # Move[Move(7, 2, 5, 0, 3), Move(2, 0, 2, 0, 2), Move(9, 7, 9, 3, 4), Move(5, 3, 5, 3, 2), Move(4, 3, 1, 3, 2), Move(5, 6, 5, 6, 2), Move(4, 6, 1, 6, 2), Move(6, 10, 6, 6, 4), Move(4, 8, 2, 6, 3), Move(7, 9, 3, 9, 2), Move(3, 10, 3, 6, 4), Move(5, 8, 3, 10, 1), Move(7, 8, 3, 8, 2), Move(7, 7, 5, 9, 1), Move(7, 5, 7, 5, 4), Move(6, 4, 5, 3, 3), Move(6, 5, 6, 2, 4), Move(5, 4, 3, 2, 3), Move(4, 5, 3, 6, 1), Move(3, 4, 3, 4, 3), Move(3, 5, 3, 2, 4), Move(5, 7, 3, 5, 3), Move(2, 10, 2, 10, 1), Move(5, 5, 5, 3, 4), Move(8, 5, 5, 5, 2), Move(8, 7, 5, 7, 2), Move(5, 10, 5, 10, 1), Move(5, 11, 5, 7, 4), Move(2, 7, 1, 6, 3), Move(4, 10, 2, 10, 2), Move(4, 7, 4, 6, 4), Move(2, 5, 2, 5, 3), Move(1, 7, 1, 7, 2), Move(1, 5, 1, 5, 2), Move(2, 8, 1, 7, 3), Move(1, 9, 1, 9, 1), Move(2, 9, 2, 6, 4), Move(1, 10, 1, 10, 1), Move(1, 8, 1, 6, 4), Move(8, 8, 5, 11, 1), Move(8, 4, 8, 4, 4), Move(5, 1, 5, 1, 3), Move(10, 2, 6, 6, 1), Move(4, 4, 4, 4, 3), Move(0, 8, 0, 8, 1), Move(-1, 8, -1, 8, 2), Move(0, 7, -1, 8, 1), Move(-1, 6, -1, 6, 3), Move(4, 2, 4, 2, 4), Move(2, 4, 2, 4, 1), Move(1, 4, 1, 4, 2), Move(2, 2, 2, 2, 4), Move(1, 2, 1, 2, 4), Move(-2, 7, -2, 7, 1), Move(5, -1, 1, 3, 1), Move(0, 9, 0, 5, 4), Move(-3, 6, -3, 6, 3), Move(-2, 6, -3, 6, 2), Move(-1, 10, -1, 10, 1), Move(-1, 9, -1, 9, 2), Move(-1, 7, -1, 6, 4), Move(-3, 5, -3, 5, 3), Move(-3, 7, -3, 7, 2), Move(-1, 5, -3, 7, 1), Move(-2, 8, -2, 8, 1), Move(5, 2, 1, 2, 2), Move(5, -2, 5, -2, 4), Move(7, 4, 5, 2, 3), Move(10, 4, 6, 4, 2), Move(7, 1, 7, 1, 4), Move(7, 0, 3, 4, 1), Move(8, 2, 6, 0, 3), Move(9, 2, 5, 2, 2), Move(10, 1, 6, 5, 1), Move(-2, 5, -3, 5, 2), Move(-1, 4, -3, 6, 1), Move(-2, 4, -2, 4, 4), Move(-3, 4, -3, 4, 2), Move(-3, 3, -3, 3, 3), Move(-3, 2, -3, 2, 4), Move(-2, 3, -3, 2, 3), Move(-1, 3, -3, 3, 2), Move(-2, 2, -2, 2, 3), Move(-1, 2, -1, 2, 4), Move(-2, 1, -2, 1, 3), Move(-2, 0, -2, 0, 4), Move(0, 2, -3, 2, 2), Move(0, 1, 0, 1, 4), Move(1, 0, -3, 4, 1), Move(-1, 0, -1, 0, 3), Move(0, 0, -2, 0, 2), Move(-1, 1, -2, 0, 3), Move(1, 1, -3, 5, 1), Move(-1, -1, -1, -1, 3), Move(-1, -2, -1, -2, 4), Move(2, 1, -2, 1, 2), Move(4, 1, 2, 1, 2), Move(6, -1, 2, 3, 1), Move(6, -2, 6, -2, 4), Move(0, -1, -1, -2, 3), Move(1, -2, -3, 2, 1), Move(4, -1, 1, 2, 1), Move(4, -2, 4, -2, 4), Move(2, -1, 1, -2, 3), Move(2, -2, 2, -2, 4), Move(3, -1, 2, -1, 2), Move(3, -2, 3, -2, 4), Move(5, -3, 1, 1, 1), Move(7, -2, 3, -2, 2), Move(1, -3, 1, -3, 3), Move(0, -2, -1, -2, 2), Move(0, -3, 0, -3, 4), Move(1, -1, 0, -2, 3), Move(-2, -1, -2, -1, 2), Move(1, -4, 1, -4, 4), Move(2, -3, 1, -4, 3), Move(2, -5, -2, -1, 1), Move(3, -3, -1, 1, 1), Move(4, -3, 0, -3, 2), Move(3, -4, 2, -5, 3), Move(2, -4, 2, -4, 3), Move(2, -6, 2, -6, 4), Move(5, -4, 1, 0, 1), Move(4, -4, 1, -4, 2), Move(3, -5, 2, -6, 3), Move(3, -6, 3, -6, 4), Move(4, -6, 0, -2, 1), Move(4, -5, 4, -6, 4), Move(5, -6, 1, -2, 1), Move(6, -6, 2, -6, 2), Move(5, -5, 5, -6, 4), Move(6, -5, 2, -5, 2), Move(7, -7, 3, -3, 1), Move(6, -3, 3, -6, 3), Move(6, -4, 6, -6, 4), Move(8, 0, 4, 4, 1), Move(8, 1, 8, 0, 4), Move(9, 1, 6, 1, 2), Move(7, -1, 6, -2, 3), Move(10, 3, 6, -1, 3), Move(11, 2, 7, 6, 1), Move(7, -3, 7, -3, 4), Move(8, -3, 4, -3, 2), Move(8, -2, 4, -6, 3), Move(10, 0, 6, 4, 1), Move(9, 0, 6, 0, 2), Move(9, -1, 9, -1, 4), Move(8, -1, 7, -2, 3), Move(10, -1, 6, -1, 2), Move(11, -2, 7, 2, 1), Move(10, -2, 10, -2, 4), Move(9, -2, 7, -2, 2), Move(7, -4, 5, -6, 3), Move(8, -4, 8, -4, 4), Move(9, -5, 5, -1, 1), Move(9, -4, 5, -4, 2), Move(9, -3, 9, -5, 4), Move(10, -4, 6, 0, 1), Move(7, -5, 6, -6, 3), Move(7, -6, 7, -7, 4), Move(10, -5, 6, -1, 1), Move(8, -5, 6, -5, 2), Move(9, -6, 5, -2, 1), Move(10, -3, 7, -6, 3), Move(10, -6, 10, -6, 4), Move(8, -6, 6, -6, 2), Move(11, -3, 7, -7, 3), Move(12, -3, 8, -3, 2), Move(11, -4, 7, 0, 1), Move(8, -7, 8, -7, 3), Move(9, -8, 5, -4, 1), Move(8, -8, 8, -8, 4), Move(9, -7, 5, -3, 1), Move(9, -9, 9, -9, 4), Move(12, -4, 8, 0, 1), Move(11, -5, 8, -8, 3), Move(11, -1, 11, -5, 4), Move(13, -4, 9, -4, 2)]
+# 178
+# Move[Move(7, 2, 5, 0, 3), Move(5, 3, 5, 3, 2), Move(2, 0, 2, 0, 2), Move(9, 7, 9, 3, 4), Move(5, 6, 5, 6, 2), Move(4, 3, 1, 3, 2), Move(6, 10, 6, 6, 4), Move(3, 10, 3, 6, 4), Move(5, 8, 3, 10, 1), Move(4, 8, 2, 6, 3), Move(7, 8, 3, 8, 2), Move(7, 7, 5, 9, 1), Move(7, 9, 3, 9, 2), Move(4, 6, 1, 6, 2), Move(7, 5, 7, 5, 4), Move(6, 4, 5, 3, 3), Move(6, 5, 6, 2, 4), Move(5, 4, 3, 2, 3), Move(4, 5, 3, 6, 1), Move(3, 4, 3, 4, 3), Move(3, 5, 3, 2, 4), Move(5, 7, 3, 5, 3), Move(2, 10, 2, 10, 1), Move(5, 5, 5, 3, 4), Move(8, 5, 5, 5, 2), Move(8, 7, 5, 7, 2), Move(5, 10, 5, 10, 1), Move(5, 11, 5, 7, 4), Move(4, 10, 2, 10, 2), Move(4, 7, 4, 6, 4), Move(2, 5, 2, 5, 3), Move(2, 7, 1, 6, 3), Move(1, 7, 1, 7, 2), Move(2, 8, 1, 7, 3), Move(2, 9, 2, 6, 4), Move(1, 9, 1, 9, 1), Move(1, 10, 1, 10, 1), Move(1, 8, 1, 6, 4), Move(8, 8, 5, 11, 1), Move(8, 4, 8, 4, 4), Move(5, 1, 5, 1, 3), Move(4, 4, 3, 3, 3), Move(4, 2, 4, 2, 4), Move(2, 4, 2, 4, 1), Move(1, 4, 1, 4, 2), Move(2, 2, 2, 2, 4), Move(10, 2, 6, 6, 1), Move(1, 5, 1, 5, 2), Move(1, 2, 1, 2, 4), Move(5, 2, 1, 2, 2), Move(7, 4, 5, 2, 3), Move(10, 4, 6, 4, 2), Move(7, 1, 7, 1, 4), Move(8, 0, 4, 4, 1), Move(5, -1, 1, 3, 1), Move(5, -2, 5, -2, 4), Move(0, 8, 0, 8, 1), Move(8, 2, 6, 0, 3), Move(-1, 8, -1, 8, 2), Move(9, 2, 6, 2, 2), Move(10, 1, 6, 5, 1), Move(7, 0, 3, 4, 1), Move(8, 1, 8, 0, 4), Move(9, 1, 6, 1, 2), Move(10, 0, 6, 4, 1), Move(9, 0, 6, 0, 2), Move(9, -1, 9, -1, 4), Move(0, 7, -1, 8, 1), Move(0, 9, 0, 5, 4), Move(-1, 10, -1, 10, 1), Move(-1, 6, -1, 6, 3), Move(-2, 7, -2, 7, 1), Move(-1, 9, -1, 9, 2), Move(-1, 7, -1, 6, 4), Move(-2, 8, -2, 8, 1), Move(-3, 6, -3, 6, 3), Move(-3, 7, -3, 7, 2), Move(-2, 6, -3, 6, 2), Move(-3, 5, -3, 5, 3), Move(-1, 5, -3, 7, 1), Move(-2, 5, -3, 5, 2), Move(-2, 4, -2, 4, 4), Move(-3, 3, -3, 3, 3), Move(-1, 4, -3, 6, 1), Move(-3, 4, -3, 4, 2), Move(-3, 2, -3, 2, 4), Move(-2, 3, -3, 2, 3), Move(-1, 3, -3, 3, 2), Move(-2, 2, -2, 2, 3), Move(-1, 2, -1, 2, 4), Move(-2, 1, -2, 1, 3), Move(-2, 0, -2, 0, 4), Move(0, 2, -3, 2, 2), Move(-1, 1, -2, 0, 3), Move(0, 1, 0, 1, 4), Move(1, 0, -3, 4, 1), Move(-1, 0, -1, 0, 3), Move(0, 0, -2, 0, 2), Move(1, 1, -3, 5, 1), Move(2, 1, -2, 1, 2), Move(4, 1, 2, 1, 2), Move(6, -1, 2, 3, 1), Move(6, -2, 6, -2, 4), Move(-1, -1, -1, -1, 3), Move(-1, -2, -1, -2, 4), Move(0, -1, -1, -2, 3), Move(1, -2, -3, 2, 1), Move(2, -1, 1, -2, 3), Move(4, -1, 1, 2, 1), Move(4, -2, 4, -2, 4), Move(3, -1, 2, -1, 2), Move(3, -2, 3, -2, 4), Move(2, -2, 2, -2, 4), Move(1, -3, 1, -3, 3), Move(0, -2, -1, -2, 2), Move(0, -3, 0, -3, 4), Move(1, -1, 0, -2, 3), Move(-2, -1, -2, -1, 2), Move(3, -3, -1, 1, 1), Move(1, -4, 1, -4, 4), Move(2, -4, 2, -4, 3), Move(2, -5, -2, -1, 1), Move(2, -3, 1, -4, 3), Move(4, -3, 0, -3, 2), Move(5, -4, 1, 0, 1), Move(2, -6, 2, -6, 4), Move(3, -4, 2, -5, 3), Move(4, -4, 1, -4, 2), Move(7, -2, 3, -2, 2), Move(5, -3, 1, 1, 1), Move(3, -5, 2, -6, 3), Move(4, -6, 0, -2, 1), Move(4, -5, 4, -6, 4), Move(3, -6, 3, -6, 4), Move(6, -3, 3, -6, 3), Move(5, -6, 1, -2, 1), Move(6, -6, 2, -6, 2), Move(5, -5, 5, -6, 4), Move(6, -5, 2, -5, 2), Move(6, -4, 6, -6, 4), Move(7, -7, 3, -3, 1), Move(7, -1, 6, -2, 3), Move(10, 3, 6, -1, 3), Move(11, 2, 7, 6, 1), Move(8, -1, 7, -2, 3), Move(10, -1, 6, -1, 2), Move(11, -2, 7, 2, 1), Move(10, -2, 10, -2, 4), Move(7, -3, 7, -3, 4), Move(8, -3, 4, -3, 2), Move(8, -2, 6, -4, 3), Move(8, -4, 8, -4, 4), Move(9, -5, 5, -1, 1), Move(9, -2, 7, -2, 2), Move(7, -4, 6, -5, 3), Move(9, -4, 5, -4, 2), Move(10, -5, 6, -1, 1), Move(9, -3, 9, -5, 4), Move(10, -4, 6, 0, 1), Move(7, -5, 6, -6, 3), Move(8, -5, 6, -5, 2), Move(9, -6, 5, -2, 1), Move(7, -6, 7, -7, 4), Move(10, -3, 7, -6, 3), Move(10, -6, 10, -6, 4), Move(8, -6, 6, -6, 2), Move(11, -3, 7, -7, 3), Move(12, -3, 8, -3, 2), Move(12, -4, 8, 0, 1), Move(11, -4, 7, 0, 1), Move(13, -4, 9, -4, 2), Move(9, -7, 5, -3, 1), Move(8, -7, 8, -7, 3), Move(8, -8, 8, -8, 4), Move(11, -5, 8, -8, 3), Move(11, -1, 11, -5, 4), Move(9, -8, 5, -4, 1), Move(9, -9, 9, -9, 4)]
