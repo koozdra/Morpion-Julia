@@ -256,7 +256,12 @@ function main()
 		# Only begin end searching at a minimum of 100
 		if !haskey(end_searched, index_key) && selected_score >= 100
 
+			es_start = time()
 			result_index = end_search(moves)
+			es_end = time()
+
+			max_score_found = 0
+
 			found_new = false
 
 			if !isempty(result_index)
@@ -276,6 +281,8 @@ function main()
 
 							found_new = true
 
+
+
 							println("$iteration.  es $selected_score > $found_score (impr: $improvement_counter)")
 						end
 
@@ -285,6 +292,8 @@ function main()
 					end
 				end
 			end
+
+			println("$iteration. ES $selected_score found:$(length(result_index)) $(es_end - es_start)")
 
 			# If no new configurations are found
 			# don't end search again
