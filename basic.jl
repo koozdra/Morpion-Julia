@@ -263,19 +263,17 @@ function main()
 						end
 
 						# If a new configuration is found
-						if !haskey(index, found_index_key)
-							if (found_score >= index_max_score - step_back)
-								index[found_index_key] = (0, found_moves)
-								push!(candidates, found_index_key)
+						if (found_score >= index_max_score - step_back)
+							index[found_index_key] = (0, found_moves)
+							push!(candidates, found_index_key)
 
-								found_new = true
+							found_new = true
 
-								println("$iteration.  es $selected_score > $found_score (impr: $improvement_counter)")
-							end
+							println("$iteration.  es $selected_score > $found_score (impr: $improvement_counter)")
+						end
 
-							if found_score > (index_max_score - step_back)
-								improvement_counter += 1
-							end
+						if found_score > (index_max_score - step_back)
+							improvement_counter += 1
 						end
 					end
 				end
@@ -287,23 +285,6 @@ function main()
 				end_searched[index_key] = true
 			end
 		end
-
-		# If we have exceeded the number of searches each grid can have
-		# remove the grid from the index
-		# if visits > max_visits
-		# 	# taboo_index[index_key] = true
-		# 	delete!(index, index_key)
-
-
-		# 	if !isempty(index)
-		# 		new_index_max_score = maximum(p -> length(p[2][2]), index)
-		# 		if new_index_max_score < index_max_score
-		# 			empty!(index)
-		# 		end
-		# 	end
-
-		# 	println("$iteration. -$(length(moves)) index:$(length(index)) index_max:$index_max_score")
-
 
 		if improvement_counter >= 1
 			step_back = max(0, step_back - 1)
