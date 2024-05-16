@@ -91,6 +91,7 @@ function main()
 	index[points_hash(max_moves)] = (0, max_moves)
 
 	candidates = [points_hash(max_moves)]
+	index_key = points_hash(max_moves)
 
 	points_hash_cache = Dict{UInt64, UInt64}()
 
@@ -102,7 +103,7 @@ function main()
 	num_new_generated_counter = 0
 	num_time_steps_no_new_generated_counter = 0
 	improvement_counter = 0
-	linger_counter = 0
+	should_linger = false
 	select_new_item = false
 	index_max_score = max_score
 	t = time()
@@ -127,11 +128,17 @@ function main()
 		end
 
 		# Selecteion
-		index_key = candidates[(iteration%length(candidates))+1]
+		index_key = if !should_linger
+			candidates[(iteration%length(candidates))+1]
+		else
+			index_key
+		end
 
 		(visits, moves) = index[index_key]
 		index[index_key] = (visits + 1, moves)
 		selected_score = length(moves)
+
+		should_linger = visits < length(moves)
 
 		visit_move = moves[(visits%length(moves))+1]
 
