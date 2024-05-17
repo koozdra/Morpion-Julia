@@ -138,7 +138,7 @@ function main()
 		index[index_key] = (visits + 1, moves)
 		selected_score = length(moves)
 
-		should_linger = visits < length(moves)
+		should_linger = visits < (length(moves) * 2)
 
 		visit_move = moves[(visits%length(moves))+1]
 
@@ -185,7 +185,7 @@ function main()
 		if !is_in_index
 
 			# Good scores are stored in the back up 
-			if (eval_score >= index_max_score - 10)
+			if (eval_score >= index_max_score - step_back - 2)
 				index[eval_points_hash] = (0, eval_moves)
 			end
 
@@ -222,7 +222,7 @@ function main()
 				num_time_steps_no_new_generated_counter += 1
 
 				# If we have reached the idle number of time steps that it makes sense to drop back
-				if num_time_steps_no_new_generated_counter >= 3
+				if num_time_steps_no_new_generated_counter >= 10
 					step_back += 1
 
 					candidates = []
@@ -270,7 +270,7 @@ function main()
 					found_score = length(found_moves)
 
 					if !haskey(index, found_index_key)
-						if (found_score >= index_max_score - 10)
+						if (found_score >= index_max_score - step_back - 2)
 							index[found_index_key] = (0, found_moves)
 						end
 
