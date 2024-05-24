@@ -226,7 +226,7 @@ function main()
 				num_time_steps_no_new_generated_counter += 1
 
 				# If we have reached the idle number of time steps that it makes sense to drop back
-				if num_time_steps_no_new_generated_counter >= 10
+				if num_time_steps_no_new_generated_counter >= 1
 					step_back += 1
 
 					candidates = []
@@ -304,7 +304,7 @@ function main()
 			end
 		end
 
-		if improvement_counter >= 1
+		if improvement_counter >= 10
 			step_back = max(0, step_back - 1)
 			improvement_counter = 0
 
