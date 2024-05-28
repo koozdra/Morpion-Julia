@@ -154,7 +154,8 @@ function main()
 
 		# Modification
 		test_dna[dna_index(visit_move)] = 0
-		num_rand = floor(Int, visits / selected_score) % 5
+		# num_rand = floor(Int, visits / selected_score) % 5
+		num_rand = (visits ÷ selected_score) % 5
 		for i in num_rand
 			test_dna[dna_index(moves[rand(1:end)])] = 0
 		end
