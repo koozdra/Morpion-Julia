@@ -142,8 +142,6 @@ function main()
 		index[index_key] = (visits + 1, moves)
 		selected_score = length(moves)
 
-		max_linger = selected_score > (index_max_score - step_back) ? 100 : 10
-
 		should_linger = visits < (length(moves) * 10000) && linger_counter < max_linger
 
 		visit_move = moves[(visits%length(moves))+1]
@@ -230,7 +228,7 @@ function main()
 				num_time_steps_no_new_generated_counter += 1
 
 				# If we have reached the idle number of time steps that it makes sense to drop back
-				if num_time_steps_no_new_generated_counter >= 1
+				if num_time_steps_no_new_generated_counter >= 2
 					step_back += 1
 
 					candidates = []
