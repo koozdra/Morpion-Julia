@@ -142,6 +142,8 @@ function main()
 		index[index_key] = (visits + 1, moves)
 		selected_score = length(moves)
 
+		max_linger = selected_score > (index_max_score - step_back) ? 100 : 10
+
 		should_linger = visits < (length(moves) * 10000) && linger_counter < max_linger
 
 		visit_move = moves[(visits%length(moves))+1]
