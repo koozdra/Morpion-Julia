@@ -154,7 +154,8 @@ function main()
 
 		# Modification
 		test_dna[dna_index(visit_move)] = 0
-		for i in rand(0:4)
+		num_rand = floor(Int, visits / selected_score) % 5
+		for i in num_rand
 			test_dna[dna_index(moves[rand(1:end)])] = 0
 		end
 
@@ -222,11 +223,11 @@ function main()
 			)
 
 			# If this round we have only generated a few configurations
-			if num_new_generated_counter <= 10
+			if num_new_generated_counter <= 1
 				num_time_steps_no_new_generated_counter += 1
 
 				# If we have reached the idle number of time steps that it makes sense to drop back
-				if num_time_steps_no_new_generated_counter >= 3
+				if num_time_steps_no_new_generated_counter >= 1
 					step_back += 1
 
 					candidates = []
