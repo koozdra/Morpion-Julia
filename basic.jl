@@ -105,7 +105,7 @@ function main()
 	improvement_counter = 0
 	should_linger = false
 	linger_counter = 0
-	max_linger = 10
+	max_linger = 100
 	select_new_item = false
 	index_max_score = max_score
 	t = time()
@@ -144,7 +144,7 @@ function main()
 		index[index_key] = (visits + 1, moves)
 		selected_score = length(moves)
 
-		should_linger = visits < (length(moves) * 10000) && linger_counter < max_linger
+		should_linger = visits < (length(moves) * 1000) && linger_counter < max_linger
 
 		visit_move = moves[(visits%length(moves))+1]
 
@@ -230,7 +230,7 @@ function main()
 				num_time_steps_no_new_generated_counter += 1
 
 				# If we have reached the idle number of time steps that it makes sense to drop back
-				if num_time_steps_no_new_generated_counter >= 3
+				if num_time_steps_no_new_generated_counter >= 4
 					step_back += 1
 
 					candidates = []
@@ -283,7 +283,7 @@ function main()
 					found_score = length(found_moves)
 
 					if !haskey(index, found_index_key)
-						if (found_score >= index_max_score - step_back - 2)
+						if (found_score >= selected_score - 5)
 							index[found_index_key] = (0, found_moves)
 						end
 
