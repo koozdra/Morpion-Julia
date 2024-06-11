@@ -115,6 +115,8 @@ function main()
 	empty_board = initial_board()
 	empty_start_moves = initial_moves()
 
+	no_new_step_back_at = 1
+
 	while true
 
 		# If the index is empty look into the backup and rebuild the index
@@ -144,7 +146,7 @@ function main()
 		index[index_key] = (visits + 1, moves)
 		selected_score = length(moves)
 
-		should_linger = visits < (length(moves) * 3) || (visits < (length(moves) * 10000) && linger_counter < max_linger)
+		should_linger = visits < (length(moves) * 100) || (visits < (length(moves) * 100000) && linger_counter < max_linger)
 
 		visit_move = moves[(visits%length(moves))+1]
 
@@ -200,7 +202,9 @@ function main()
 			if (eval_score >= index_max_score - step_back)
 				index[eval_points_hash] = (0, eval_moves)
 
-				# index[index_key] = (0, moves)
+				#experimental
+				index[index_key] = (0, moves)
+
 				push!(candidates, eval_points_hash)
 
 				println("$iteration. $selected_score ($visits) > $eval_score (impr: $improvement_counter)")
@@ -222,15 +226,29 @@ function main()
 			dt = time() - t
 
 			println(
-				"$iteration. cand:$(length(candidates)) index:$(length(index)) impr:$improvement_counter new:$num_new_generated_counter new_generated:$num_new_generated_counter no_new:$num_time_steps_no_new_generated_counter $(index_max_score - step_back)/$index_max_score/$max_score $dt",
+				"$iteration. cand:$(length(candidates)) index:$(length(index)) impr:$improvement_counter new:$num_new_generated_counter new_generated:$num_new_generated_counter nnsb:$no_new_step_back_at no_new:$num_time_steps_no_new_generated_counter $(index_max_score - step_back)/$index_max_score/$max_score $(round(dt, digits=2))",
 			)
 
 			# If this round we have only generated a few configurations
 			if num_new_generated_counter <= 1
 				num_time_steps_no_new_generated_counter += 1
 
+				function mapInto(range_start, range_end, horizon, count)
+					v = (range_end + 1) - range_start
+					range_start + floor(((count % horizon) / horizon) * v)
+				end
+
+				# no_new_step_back_at = if mapInto(1, 2, 20_000_000, iteration) == 1
+				# 	1
+				# else
+				# 	10
+				# end
+
+				no_new_step_back_at = mapInto(1, 10, 10_000_000, iteration)
+				# no_new_step_back_at = 10
+
 				# If we have reached the idle number of time steps that it makes sense to drop back
-				if num_time_steps_no_new_generated_counter >= 3
+				if num_time_steps_no_new_generated_counter >= no_new_step_back_at
 					step_back += 1
 
 					candidates = []
@@ -246,13 +264,13 @@ function main()
 		end
 
 		# Occasionally restart the search from the top
-		if iteration > 0 && iteration % 100000000 == 0
+		if iteration > 0 && iteration % 100_000_000 == 0
 			step_back = 0
 			candidates = []
 		end
 
 		# Occasionally Print the high score and moves
-		if iteration > 0 && iteration % 10000000 == 0
+		if iteration > 0 && iteration % 10_000_000 == 0
 			println(max_score)
 			println(max_moves)
 
@@ -276,6 +294,7 @@ function main()
 			max_score_found = 0
 
 			found_new = false
+			new_found_count = 0
 
 			if !isempty(result_index)
 				for found_index_key in collect(keys(result_index))
@@ -285,6 +304,7 @@ function main()
 					if !haskey(index, found_index_key)
 						if (found_score >= selected_score - 5)
 							index[found_index_key] = (0, found_moves)
+							new_found_count += 1
 						end
 
 						# If a new configuration is found
@@ -304,7 +324,7 @@ function main()
 				end
 			end
 
-			println("$iteration. ES $selected_score found:$(length(result_index)) $(es_end - es_start)")
+			println("$iteration. ES $selected_score f:$(length(result_index)) n:$(new_found_count) $(es_end - es_start)")
 
 			# If no new configurations are found
 			# don't end search again
