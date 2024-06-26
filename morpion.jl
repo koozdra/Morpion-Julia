@@ -81,8 +81,7 @@ const direction_offset = [(1, -1) (1, 0) (1, 1) (0, 1)]
 const mask_x = 0b00001
 const mask_dir = [0b00010, 0b00100, 0b01000, 0b10000]
 
-
-function generate_initial_moves()
+@inline function initial_moves()
 	Move[
 		Move(3, -1, 3, -1, 4),
 		Move(6, -1, 6, -1, 4),
@@ -114,10 +113,43 @@ function generate_initial_moves()
 		Move(7, 7, 5, 9, 1),
 	]
 end
-cached_initial_moves = generate_initial_moves()
-function initial_moves()
-	copy(cached_initial_moves)
-end
+
+# function generate_initial_moves()
+# 	Move[
+# 		Move(3, -1, 3, -1, 4),
+# 		Move(6, -1, 6, -1, 4),
+# 		Move(2, 0, 2, 0, 2),
+# 		Move(7, 0, 3, 0, 2),
+# 		Move(3, 4, 3, 0, 4),
+# 		Move(7, 2, 5, 0, 3),
+# 		Move(6, 4, 6, 0, 4),
+# 		Move(0, 2, 0, 2, 4),
+# 		Move(9, 2, 9, 2, 4),
+# 		Move(-1, 3, -1, 3, 2),
+# 		Move(4, 3, 0, 3, 2),
+# 		Move(0, 7, 0, 3, 4),
+# 		Move(5, 3, 5, 3, 2),
+# 		Move(10, 3, 6, 3, 2),
+# 		Move(9, 7, 9, 3, 4),
+# 		Move(2, 2, 0, 4, 1),
+# 		Move(2, 7, 0, 5, 3),
+# 		Move(3, 5, 3, 5, 4),
+# 		Move(6, 5, 6, 5, 4),
+# 		Move(-1, 6, -1, 6, 2),
+# 		Move(4, 6, 0, 6, 2),
+# 		Move(3, 10, 3, 6, 4),
+# 		Move(5, 6, 5, 6, 2),
+# 		Move(10, 6, 6, 6, 2),
+# 		Move(6, 10, 6, 6, 4),
+# 		Move(2, 9, 2, 9, 2),
+# 		Move(7, 9, 3, 9, 2),
+# 		Move(7, 7, 5, 9, 1),
+# 	]
+# end
+# cached_initial_moves = generate_initial_moves()
+# function initial_moves()
+# 	copy(cached_initial_moves)
+# end
 
 
 # this should really be handled through memoization
