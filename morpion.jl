@@ -900,7 +900,13 @@ function points_hash(morpion::Morpion)
 end
 
 function points_hash(moves::Array{Move, 1})
-	hash(sort(map((move) -> (move.x, move.y), moves)))
+	# dimitri
+	board = zeros(Bool, 46 * 46)
+	for move in moves
+		board[board_index(move.x, move.y)] = true
+	end
+	hash(board)
+	# hash(sort(map((move) -> (move.x, move.y), moves)))
 end
 
 function end_search(morpion::Morpion, trials::Number)

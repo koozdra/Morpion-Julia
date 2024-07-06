@@ -73,7 +73,6 @@ end
 mutable struct SearchState
 	# Current best solution
 	max_moves::Array{Move, 1}
-	max_score::Int
 
 	# Search space management
 	index::Dict{UInt64}
@@ -90,19 +89,22 @@ mutable struct SearchState
 	num_new_generated_counter::Int
 	num_time_steps_no_new_generated_counter::Int
 	improvement_counter::Int
+	index_max_score::Int
 
 	# Selection state
-	should_linger::Bool
 	linger_counter::Int
 	selection_counter::Int
 	current_index_key::UInt64
+
+	# Templates
+	empty_board::Array{UInt8, 1}
+	empty_start_moves::Array{Move, 1}
 
 	timer::Float64
 end
 
 function initialize_search()
 	max_moves = random_morpion()
-	max_score = length(max_moves)
 
 	index = Dict{UInt64, Tuple{Int, Array{Move, 1}}}()
 	candidates = Array{UInt64, 1}()
@@ -115,9 +117,11 @@ function initialize_search()
 	index[initial_hash] = (0, max_moves)
 	push!(candidates, initial_hash)
 
+	empty_board = initial_board()
+	empty_start_moves = initial_moves()
+
 	return SearchState(
 		max_moves,
-		max_score,
 		index,
 		candidates,
 		end_searched,
@@ -128,10 +132,12 @@ function initialize_search()
 		0,  # num_new_generated_counter
 		0,  # num_time_steps_no_new_generated_counter
 		0,  # improvement_counter
-		false,  # should_linger
+		0,  # index_max_score
 		0,  # linger_counter
 		0,  # selection_counter
 		initial_hash,  # current_index_key
+		empty_board,
+		empty_start_moves,
 		time(),  # start_time
 	)
 end
@@ -139,42 +145,163 @@ end
 function visit!(state::SearchState)
 	state.iteration += 1
 
-	if isempty(state.candidates)
-		repopulate_candidates!(state)
-	end
+	(selected_visits, selected_moves) = select_candidate!(state)
+	selected_score = length(selected_moves)
 
-	select_candidate!(state)
+	result =
+		if !haskey(state.end_searched, state.current_index_key) && selected_score >= 100
+			# do the end search
+			candidate_end_search(selected_visits, selected_moves, state)
+
+			# if selected_score > (state.index_max_score - state.step_back)
+			# 	state.candidates = []
+			# 	state.step_back = state.index_max_score - selected_score
+			# 	state.num_time_steps_no_new_generated_counter = 0
+			# 	[]
+			# end
+		else
+			candidate_modification(selected_visits, selected_moves, state)
+		end
+
+	process_search_result!(selected_visits, selected_moves, result, state)
+
 
 	state
 end
 
+function process_search_result!(selected_visits, selected_moves, result, state::SearchState)
+	selected_score = length(selected_moves)
+	for (found_key, found_moves) in result
+		found_score = length(found_moves)
+
+		if found_score > length(state.max_moves)
+			println("$(state.iteration). ******* $found_score")
+			println("cand: $(length(state.candidates))")
+			println("step_back: $(state.step_back)")
+			state.max_moves = found_moves
+
+			state.step_back = 0
+			state.improvement_counter = 0
+			state.candidates = []
+		else
+			is_in_index = haskey(state.index, found_key)
+
+			if is_in_index
+				(v, _) = state.index[found_key]
+				state.index[found_key] = (v, found_moves)
+			else
+				# Good scores are stored in the back up 
+				if (found_score >= state.index_max_score - state.step_back - 2)
+					state.index[found_key] = (0, found_moves)
+				end
+
+				if (found_score >= state.index_max_score - state.step_back)
+					state.index[found_key] = (0, found_moves)
+
+					#experimental
+					(_, m) = state.index[state.current_index_key]
+					state.index[state.current_index_key] = (0, m)
+
+					push!(state.candidates, found_key)
+
+					println("$(state.iteration). $selected_score ($selected_visits) > $found_score (impr: $(state.improvement_counter))")
+
+					state.num_new_generated_counter += 1
+				end
+
+				if found_score > (state.index_max_score - state.step_back)
+					state.improvement_counter += 1
+				end
+			end
+		end
+	end
+end
+
+function candidate_end_search(selected_visits::Int64, selected_moves::Array{Move, 1}, state::SearchState)
+	selected_score = length(selected_moves)
+	state.end_searched[state.current_index_key] = true
+	pairs(end_search(selected_moves))
+end
+
+function candidate_modification(selected_visits::Int64, selected_moves::Array{Move, 1}, state::SearchState)
+	selected_score = length(selected_moves)
+	visit_move = selected_moves[(selected_visits%length(selected_score))+1]
+
+	# Generation
+	if !haskey(state.dna_cache, state.current_index_key)
+		state.dna_cache[state.current_index_key] = generate_dna(selected_moves)
+	end
+	test_dna = copy(state.dna_cache[state.current_index_key])
+	test_dna[dna_index(visit_move)] = 0
+	num_rand = (selected_visits ÷ selected_score) % 3
+	for _ in 0:num_rand
+		test_dna[dna_index(selected_moves[rand(1:end)])] = 0
+	end
+
+	# Evaluation
+	eval_moves = eval_dna(test_dna, copy(state.empty_board), copy(state.empty_start_moves))
+
+	eval_points_hash = memoize_points_hash(eval_moves, state.points_hash_cache)
+
+	if haskey(state.dna_cache, eval_points_hash)
+		state.dna_cache[eval_points_hash] = test_dna
+	end
+
+	[(eval_points_hash, eval_moves)]
+end
+
+function select_candidate!(state::SearchState)
+	if isempty(state.candidates)
+		repopulate_candidates!(state)
+	end
+
+	(visits, moves) = state.index[state.current_index_key]
+	state.index[state.current_index_key] = (visits + 1, moves)
+
+	should_linger = ((visits < (length(moves) * 100000)) && state.linger_counter < (length(moves) * 1)) || (state.linger_counter < 10)
+
+	index_key = if !should_linger
+		state.linger_counter = 0
+		state.selection_counter += 1
+		new_key = state.candidates[(state.selection_counter%length(state.candidates))+1]
+		state.current_index_key = new_key
+		new_key
+	else
+		state.linger_counter += 1
+		state.current_index_key
+	end
+
+	state.index[index_key]
+end
+
 function repopulate_candidates!(state::SearchState)
-	index_max_score = maximum(p -> length(p[2][2]), state.index)
+	state.index_max_score = maximum(p -> length(p[2][2]), state.index)
+
 
 	for key in collect(keys(state.index))
 		(visits, moves) = state.index[key]
-		if length(moves) >= (index_max_score - state.step_back)
+		if length(moves) >= (state.index_max_score - state.step_back)
 			push!(state.candidates, key)
 		end
 	end
 end
 
-function select_candidate!(state)
 
-end
-
-
-# a = initialize_search()
-# # a.candidates = []
+a = initialize_search()
+# a.candidates = []
 # println(a.iteration)
 # visit!(a)
 # println(a.iteration)
 
-# # b = visit!(a)
+# while true
+# 	visit!(a)
+# end
 
-# # println("")
+# b = visit!(a)
 
-# # println(b.candidates)
+# println("")
+
+# println(b.candidates)
 
 # readline()
 
@@ -258,7 +385,7 @@ function main()
 		selected_score = length(moves)
 
 		max_linger = 10
-		should_linger = (visits < (length(moves) * 100000) && linger_counter < (length(moves) * 5)) || (linger_counter < max_linger)
+		should_linger = (visits < (length(moves) * 100000) && linger_counter < (length(moves) * 10)) || (linger_counter < max_linger)
 		# should_linger = (visits < (length(moves) * 10000) && linger_counter < max_linger)
 
 		visit_move = moves[(visits%length(moves))+1]
