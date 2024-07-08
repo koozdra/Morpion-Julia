@@ -172,7 +172,7 @@ function generate_initial_board()
 	board
 end
 initial_board_master = generate_initial_board();
-function initial_board()
+function initial_board()::Array{UInt8, 1}
 	copy(initial_board_master)
 end
 

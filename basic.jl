@@ -1,5 +1,6 @@
 import Base.hash
 include("morpion.jl")
+using InteractiveUtils
 """
 This is a search for Morpion solitaire configurations. It is an adaptive simulated annealing algorithm that increases temperature
 when no new configurations are being generated. This allows the algorithm to traverse the top of the search space, moving to adjacent
@@ -287,7 +288,7 @@ function repopulate_candidates!(state::SearchState)
 end
 
 
-a = initialize_search()
+# a = initialize_search()
 # a.candidates = []
 # println(a.iteration)
 # visit!(a)
@@ -352,9 +353,9 @@ function main()
 	empty_board = initial_board()
 	empty_start_moves = initial_moves()
 
-	no_new_step_back_at = 1
-
 	while true
+
+		# while iteration < 1000
 
 		# If the index is empty look into the backup and rebuild the index
 		# based on the highest backup score
@@ -370,7 +371,7 @@ function main()
 		end
 
 		# Selecteion
-		index_key = if !should_linger
+		index_key::UInt64 = if !should_linger
 			linger_counter = 0
 			selection_counter += 1
 			candidates[(selection_counter%length(candidates))+1]
@@ -466,17 +467,20 @@ function main()
 			num_time_steps_no_new_generated_counter = 0
 		end
 
+		# function mapInto(range_start, range_end, horizon, count)::Int
+		# 	v = (range_end + 1) - range_start
+		# 	range_start + floor(((count % horizon) / horizon) * v)
+		# end
+
+		# no_new_step_back_at = mapInto(1, 20, 10_000_000, iteration)
+		no_new_step_back_at = 30
+
 		if iteration > 0 && iteration % 10_000 == 0
 			# If this round we have only generated a few configurations
 			if num_new_generated_counter <= 1
 				num_time_steps_no_new_generated_counter += 1
 
-				function mapInto(range_start, range_end, horizon, count)
-					v = (range_end + 1) - range_start
-					range_start + floor(((count % horizon) / horizon) * v)
-				end
 
-				no_new_step_back_at = mapInto(1, 200, 10_000_000, iteration)
 
 				# If we have reached the idle number of time steps that it makes sense to drop back
 				if num_time_steps_no_new_generated_counter >= no_new_step_back_at
@@ -590,6 +594,10 @@ function main()
 end
 
 main()
+
+
+
+
 
 
 
