@@ -389,7 +389,7 @@ function main()
 		max_linger = 1
 		# should_linger = (visits < (length(moves) * 100000) && linger_counter < (length(moves) * 10)) || (linger_counter < max_linger)
 		# should_linger = ((visits < (length(moves) * 1000)) || (visits > (length(moves) * 1000) && linger_counter < max_linger))
-		should_linger = visits < (length(moves) * 1000)
+		should_linger = visits < (length(moves) * 1000) || linger_counter < length(moves)
 
 		visit_move = moves[(visits%length(moves))+1]
 
@@ -475,7 +475,7 @@ function main()
 		# end
 
 		# no_new_step_back_at = map_into(1, 20, 10_000_000, iteration)
-		no_new_step_back_at = 10
+		no_new_step_back_at = 20
 
 		if iteration > 0 && iteration % 10_000 == 0
 			# If this round we have only generated a few configurations
