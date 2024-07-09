@@ -259,7 +259,7 @@ function select_candidate!(state::SearchState)
 	(visits, moves) = state.index[state.current_index_key]
 	state.index[state.current_index_key] = (visits + 1, moves)
 
-	should_linger = ((visits < (length(moves) * 100000)) && state.linger_counter < (length(moves) * 1)) || (state.linger_counter < 10)
+	# should_linger = ((visits < (length(moves) * 100000)) && state.linger_counter < (length(moves) * 1)) || (state.linger_counter < 10)
 
 	index_key = if !should_linger
 		state.linger_counter = 0
@@ -361,6 +361,7 @@ function main()
 		# based on the highest backup score
 		if isempty(candidates)
 			index_max_score = maximum(p -> length(p[2][2]), index)
+			should_linger = false
 
 			for key in collect(keys(index))
 				(visits, moves) = index[key]
@@ -385,9 +386,10 @@ function main()
 		index[index_key] = (visits + 1, moves)
 		selected_score = length(moves)
 
-		max_linger = 10
-		should_linger = (visits < (length(moves) * 100000) && linger_counter < (length(moves) * 10)) || (linger_counter < max_linger)
-		# should_linger = (visits < (length(moves) * 10000) && linger_counter < max_linger)
+		max_linger = 1
+		# should_linger = (visits < (length(moves) * 100000) && linger_counter < (length(moves) * 10)) || (linger_counter < max_linger)
+		# should_linger = ((visits < (length(moves) * 1000)) || (visits > (length(moves) * 1000) && linger_counter < max_linger))
+		should_linger = visits < (length(moves) * 1000)
 
 		visit_move = moves[(visits%length(moves))+1]
 
@@ -467,13 +469,13 @@ function main()
 			num_time_steps_no_new_generated_counter = 0
 		end
 
-		# function mapInto(range_start, range_end, horizon, count)::Int
+		# function map_into(range_start, range_end, horizon, count)::Int
 		# 	v = (range_end + 1) - range_start
 		# 	range_start + floor(((count % horizon) / horizon) * v)
 		# end
 
-		# no_new_step_back_at = mapInto(1, 20, 10_000_000, iteration)
-		no_new_step_back_at = 30
+		# no_new_step_back_at = map_into(1, 20, 10_000_000, iteration)
+		no_new_step_back_at = 10
 
 		if iteration > 0 && iteration % 10_000 == 0
 			# If this round we have only generated a few configurations
