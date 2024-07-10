@@ -469,10 +469,10 @@ function main()
 			num_time_steps_no_new_generated_counter = 0
 		end
 
-		# function map_into(range_start, range_end, horizon, count)::Int
-		# 	v = (range_end + 1) - range_start
-		# 	range_start + floor(((count % horizon) / horizon) * v)
-		# end
+		function map_into(range_start, range_end, horizon, count)::Int
+			v = (range_end + 1) - range_start
+			range_start + floor(((count % horizon) / horizon) * v)
+		end
 
 		no_new_step_back_at = map_into(1, 20, 10_000_000, iteration)
 		# no_new_step_back_at = 20
