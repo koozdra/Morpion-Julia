@@ -389,7 +389,7 @@ function main()
 		max_linger = 1
 		# should_linger = (visits < (length(moves) * 100000) && linger_counter < (length(moves) * 10)) || (linger_counter < max_linger)
 		# should_linger = ((visits < (length(moves) * 1000)) || (visits > (length(moves) * 1000) && linger_counter < max_linger))
-		should_linger = visits < (length(moves) * 100000) || linger_counter < 10
+		should_linger = visits < (length(moves) * 100000) && linger_counter < 10
 
 		visit_move = moves[(visits%length(moves))+1]
 
@@ -474,8 +474,8 @@ function main()
 			range_start + floor(((count % horizon) / horizon) * v)
 		end
 
-		no_new_step_back_at = map_into(1, 20, 10_000_000, iteration)
-		# no_new_step_back_at = 20
+		no_new_step_back_at = map_into(1, 100, 10_000_000, iteration)
+		# no_new_step_back_at = 50
 
 		if iteration > 0 && iteration % 10_000 == 0
 			# If this round we have only generated a few configurations
