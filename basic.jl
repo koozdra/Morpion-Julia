@@ -474,11 +474,11 @@ function main()
 			range_start + floor(((count % horizon) / horizon) * v)
 		end
 
-		t = map_into(1, 300, 10_000_000, iteration)
-		no_new_step_back_at = if t < 100
-			10
+		r = map_into(1, 300, 10_000_000, iteration)
+		no_new_step_back_at = if r < 100
+			5
 		else
-			t
+			r
 		end
 
 		# no_new_step_back_at = 50
