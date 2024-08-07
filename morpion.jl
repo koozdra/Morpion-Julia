@@ -262,60 +262,64 @@ function validate_line(board, x, y, direction)
 	ce = 0
 	cd = 0
 
-	for offset in 0:4
+	@inbounds begin
 
-		curr_x = x + delta_x * offset
-		curr_y = y + delta_y * offset
+		for offset in 0:4
 
-		empty = false
-		available = false
-		end_point = false
+			curr_x = x + delta_x * offset
+			curr_y = y + delta_y * offset
 
-
-		#value = get(board, (curr_x, curr_y), 0)
-		value = board[board_index(curr_x, curr_y)]
-
-		empty = value == 0
-
-		contains_direction = value & mask_dir[direction] != 0
-		#before_contains_direction = get(board, (curr_x - delta_x, curr_y - delta_y), 0) & mask_dir[direction] != 0
-		#after_contains_direction = get(board, (curr_x + delta_x, curr_y + delta_y), 0) & mask_dir[direction] != 0
-		before_contains_direction = board[board_index(curr_x - delta_x, curr_y - delta_y)] & mask_dir[direction] != 0
-		after_contains_direction = board[board_index(curr_x + delta_x, curr_y + delta_y)] & mask_dir[direction] != 0
+			empty = false
+			available = false
+			end_point = false
 
 
+			#value = get(board, (curr_x, curr_y), 0)
+			value = board[board_index(curr_x, curr_y)]
 
-		available = !empty && !contains_direction
+			empty = value == 0
 
-		#end_point = contains_direction && (before_contains_direction || after_contains_direction) && !(before_contains_direction && after_contains_direction)
-		end_point = contains_direction && (before_contains_direction || after_contains_direction) && !(before_contains_direction && after_contains_direction)
-
-		if empty
-			ce += 1
-			empty_x = curr_x
-			empty_y = curr_y
-		elseif available
-			ca += 1
-		elseif end_point
-			cd += 1
-			index_d = offset
-		end
+			contains_direction = value & mask_dir[direction] != 0
+			#before_contains_direction = get(board, (curr_x - delta_x, curr_y - delta_y), 0) & mask_dir[direction] != 0
+			#after_contains_direction = get(board, (curr_x + delta_x, curr_y + delta_y), 0) & mask_dir[direction] != 0
+			before_contains_direction = board[board_index(curr_x - delta_x, curr_y - delta_y)] & mask_dir[direction] != 0
+			after_contains_direction = board[board_index(curr_x + delta_x, curr_y + delta_y)] & mask_dir[direction] != 0
 
 
-		#println(" point: $curr_x, $curr_y ($(bits(value)))  $empty $available $end_point ($(before_contains_direction),$(after_contains_direction)))")
 
-		if ce == 1 && ca == 3 && cd == 1 && (index_d == 0 || index_d == 4) ||
-		   ce == 1 && ca == 4 ||
-		   ce == 1 && ca == 2 && cd == 2
+			available = !empty && !contains_direction
 
-			#new_move = Move(empty_x, empty_y, move.x + delta_x * offset, move.y + delta_y * offset, direction)
+			#end_point = contains_direction && (before_contains_direction || after_contains_direction) && !(before_contains_direction && after_contains_direction)
+			end_point = contains_direction && (before_contains_direction || after_contains_direction) && !(before_contains_direction && after_contains_direction)
 
-			#if !in(new_move, possible_moves)
-			#	push!(possible_moves, new_move)
-			#	println("adding: $new_move")
-			#end
+			if empty
+				ce += 1
+				empty_x = curr_x
+				empty_y = curr_y
+			elseif available
+				ca += 1
+			elseif end_point
+				cd += 1
+				index_d = offset
+			end
 
-			move = (empty_x, empty_y)
+
+			#println(" point: $curr_x, $curr_y ($(bits(value)))  $empty $available $end_point ($(before_contains_direction),$(after_contains_direction)))")
+
+			if ce == 1 && ca == 3 && cd == 1 && (index_d == 0 || index_d == 4) ||
+			   ce == 1 && ca == 4 ||
+			   ce == 1 && ca == 2 && cd == 2
+
+				#new_move = Move(empty_x, empty_y, move.x + delta_x * offset, move.y + delta_y * offset, direction)
+
+				#if !in(new_move, possible_moves)
+				#	push!(possible_moves, new_move)
+				#	println("adding: $new_move")
+				#end
+
+				move = (empty_x, empty_y)
+			end
+
 		end
 
 	end
@@ -343,13 +347,14 @@ function update_board(board::Array{UInt8, 1}, move::Move)
 	#board[board_index(move.x, move.y)] |= mask_x
 
 	delta_x, delta_y = direction_offset[move.direction]
+	mask = mask_dir[move.direction]
 
-	for i in 0:4
+	@simd for i in 0:4
 
 		x = move.start_x + delta_x * i
 		y = move.start_y + delta_y * i
 
-		board[board_index(x, y)] |= mask_dir[move.direction]
+		board[board_index(x, y)] |= mask
 
 	end
 end
@@ -457,11 +462,12 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 	evaluator.board[board_index(move.x, move.y)] &= ~mask_x
 
 	delta_x, delta_y = direction_offset[move.direction]
+	mask = mask_dir[move.direction]
 	for i in 0:4
 		x = move.start_x + delta_x * i
 		y = move.start_y + delta_y * i
 		#println("before ($x,$y): $(bits(evaluator.board[board_index(x,y)]))")
-		evaluator.board[board_index(x, y)] &= ~mask_dir[move.direction]
+		evaluator.board[board_index(x, y)] &= ~mask
 		#println("after ($x,$y):  $(bits(evaluator.board[board_index(x,y)]))")
 	end
 
@@ -568,15 +574,10 @@ end
 
 	#@assert in(move, possible_moves) "attempting to make move not in possible moves"
 
-	update_board(board, move)
-
-	#validate_line(board, move.start_x ,move.start_y , move.direction)
-
-
-	# TODO can these be done with one filter operation?
-	# EXPERIMENTAL
-	# deleteat!(possible_moves, findfirst(possible_moves, move))
-	filter!((move::Move) -> validate_line(board, move.start_x, move.start_y, move.direction) != (), possible_moves)
+	@inbounds begin
+		update_board(board, move)
+		filter!((move::Move) -> validate_line(board, move.start_x, move.start_y, move.direction) != (), possible_moves)
+	end
 
 
 	for direction in 1:4
@@ -782,9 +783,11 @@ end
 @inline function generate_dna(moves::Array{Move, 1})
 	morpion_dna = zeros(UInt8, 46 * 46 * 4)
 	i = 0
-	for move in moves
-		morpion_dna[dna_index(move)] = length(moves) + 1 - i
-		i += 1
+	@inbounds begin
+		for move in moves
+			morpion_dna[dna_index(move)] = length(moves) + 1 - i
+			i += 1
+		end
 	end
 
 	morpion_dna
@@ -870,13 +873,14 @@ end
 		end
 	end
 
-	while !isempty(possible_moves)
-		# move = reduce( (a,b) -> (dna[dna_index(a)] > dna[dna_index(b)]) ? a : b, possible_moves)
-		move = reduce(eval_reducer, possible_moves)
-		push!(moves, move)
-		make_move(board, move, possible_moves)
+	@inbounds begin
+		while !isempty(possible_moves)
+			# move = reduce( (a,b) -> (dna[dna_index(a)] > dna[dna_index(b)]) ? a : b, possible_moves)
+			move = reduce(eval_reducer, possible_moves)
+			push!(moves, move)
+			make_move(board, move, possible_moves)
+		end
 	end
-
 	moves
 end
 
@@ -895,14 +899,14 @@ function random_morpion()
 	taken_moves
 end
 
-function points_hash(morpion::Morpion)
-	hash(sort(map((move) -> (move.x, move.y), morpion.moves)))
-end
+# function points_hash(morpion::Morpion)
+# 	hash(sort(map((move) -> (move.x, move.y), morpion.moves)))
+# end
 
 function points_hash(moves::Array{Move, 1})
 	# dimitri
 	board = zeros(Bool, 46 * 46)
-	for move in moves
+	@inbounds for move in moves
 		board[board_index(move.x, move.y)] = true
 	end
 	hash(board)

@@ -354,250 +354,253 @@ function main()
 	empty_start_moves = initial_moves()
 
 	while true
+		@inbounds begin
+			# while iteration < 1000
 
-		# while iteration < 1000
+			# If the index is empty look into the backup and rebuild the index
+			# based on the highest backup score
+			if isempty(candidates)
+				index_max_score = maximum(p -> length(p[2][2]), index)
+				should_linger = false
 
-		# If the index is empty look into the backup and rebuild the index
-		# based on the highest backup score
-		if isempty(candidates)
-			index_max_score = maximum(p -> length(p[2][2]), index)
-			should_linger = false
-
-			for key in collect(keys(index))
-				(visits, moves) = index[key]
-				if length(moves) >= (index_max_score - step_back)
-					push!(candidates, key)
-				end
-			end
-		end
-
-		# Selecteion
-		index_key::UInt64 = if !should_linger
-			linger_counter = 0
-			selection_counter += 1
-			candidates[(selection_counter%length(candidates))+1]
-			# rand(candidates)
-		else
-			linger_counter += 1
-			index_key
-		end
-
-		(visits, moves) = index[index_key]
-		index[index_key] = (visits + 1, moves)
-		selected_score = length(moves)
-
-		max_linger = 1
-		# should_linger = (visits < (length(moves) * 100000) && linger_counter < (length(moves) * 10)) || (linger_counter < max_linger)
-		# should_linger = ((visits < (length(moves) * 1000)) || (visits > (length(moves) * 1000) && linger_counter < max_linger))
-		should_linger = visits < (length(moves) * 100000) && linger_counter < 10
-
-		visit_move = moves[(visits%length(moves))+1]
-
-		# Generation
-		if !haskey(dna_cache, index_key)
-			dna_cache[index_key] = generate_dna(moves)
-		end
-		test_dna = copy(dna_cache[index_key])
-
-		# Modification
-		test_dna[dna_index(visit_move)] = 0
-		# num_rand = floor(Int, visits / selected_score) % 5
-		# println("$visits $selected_score")
-		num_rand = (visits ÷ selected_score) % 3
-		# println("$num_rand")
-
-		# readline()
-		for _ in 0:num_rand
-			test_dna[dna_index(moves[rand(1:end)])] = 0
-		end
-
-		# Evaluation
-		eval_moves = eval_dna(test_dna, copy(empty_board), copy(empty_start_moves))
-		eval_score = length(eval_moves)
-
-		eval_points_hash = memoize_points_hash(eval_moves, points_hash_cache)
-
-		if haskey(dna_cache, eval_points_hash)
-			dna_cache[eval_points_hash] = generate_dna(eval_moves)
-		end
-
-		is_in_index = haskey(index, eval_points_hash)
-
-		if is_in_index
-			(v, m) = index[eval_points_hash]
-			index[eval_points_hash] = (v, eval_moves)
-		end
-
-		# A new global high score has been found
-		if eval_score > max_score
-			println("$iteration. ******* $eval_score")
-			max_score = eval_score
-			max_moves = eval_moves
-
-			step_back = 0
-			improvement_counter = 0
-		end
-
-		# If a new configuration is found
-		if !is_in_index
-
-			# Good scores are stored in the back up 
-			if (eval_score >= index_max_score - step_back - 2)
-				index[eval_points_hash] = (0, eval_moves)
-			end
-
-			if (eval_score >= index_max_score - step_back)
-				index[eval_points_hash] = (0, eval_moves)
-
-				#experimental
-				index[index_key] = (0, moves)
-
-				push!(candidates, eval_points_hash)
-
-				println("$iteration. $selected_score ($visits) > $eval_score (impr: $improvement_counter)")
-
-				num_new_generated_counter += 1
-			end
-
-			if eval_score > (index_max_score - step_back)
-				improvement_counter += 1
-			end
-		end
-
-		if eval_score > index_max_score
-			candidates = []
-			num_time_steps_no_new_generated_counter = 0
-		end
-
-		function map_into(range_start, range_end, horizon, count)::Int
-			v = (range_end + 1) - range_start
-			range_start + floor(((count % horizon) / horizon) * v)
-		end
-
-		r = map_into(1, 300, 10_000_000, iteration)
-		no_new_step_back_at = if r < 100
-			5
-		else
-			r
-		end
-
-		# no_new_step_back_at = 50
-
-		if iteration > 0 && iteration % 10_000 == 0
-			# If this round we have only generated a few configurations
-			if num_new_generated_counter <= 1
-				num_time_steps_no_new_generated_counter += 1
-
-
-
-				# If we have reached the idle number of time steps that it makes sense to drop back
-				if num_time_steps_no_new_generated_counter >= no_new_step_back_at
-					step_back += 1
-
-					candidates = []
-					num_time_steps_no_new_generated_counter = 0
-				end
-			else
-				num_time_steps_no_new_generated_counter = 0
-			end
-
-			num_new_generated_counter = 0
-		end
-
-		# Occasional print the status of the current run (time step)
-		if iteration > 0 && iteration % num_iterations_time == 0
-			dt = time() - t
-
-			println(
-				"$iteration. cand:$(length(candidates)) index:$(length(index)) impr:$improvement_counter new:$num_new_generated_counter new_generated:$num_new_generated_counter nnsb:$no_new_step_back_at no_new:$num_time_steps_no_new_generated_counter $(index_max_score - step_back)/$index_max_score/$max_score $(round(dt, digits=2))",
-			)
-
-
-
-			t = time()
-		end
-
-		# Occasionally restart the search from the top
-		if iteration > 0 && iteration % 100_000_000 == 0
-			step_back = 0
-			candidates = []
-			num_time_steps_no_new_generated_counter = 0
-		end
-
-		# Occasionally Print the high score and moves
-		if iteration > 0 && iteration % 10_000_000 == 0
-			println(max_score)
-			println(max_moves)
-
-			empty!(dna_cache)
-			empty!(points_hash_cache)
-		end
-
-		# End Search
-		# Only begin end searching at a minimum of 100
-		if !haskey(end_searched, index_key) && selected_score >= 100
-
-			if selected_score > (index_max_score - step_back)
-				candidates = []
-				step_back = index_max_score - selected_score
-				num_time_steps_no_new_generated_counter = 0
-			end
-
-			es_start = time()
-			result_index = end_search(moves)
-			es_end = time()
-
-			max_score_found = 0
-
-			found_new = false
-			new_found_count = 0
-
-			if !isempty(result_index)
-				for found_index_key in collect(keys(result_index))
-					found_moves = result_index[found_index_key]
-					found_score = length(found_moves)
-
-					if !haskey(index, found_index_key)
-						if (found_score >= selected_score - 5)
-							index[found_index_key] = (0, found_moves)
-							new_found_count += 1
-						end
-
-						# If a new configuration is found
-						if (found_score >= index_max_score - step_back)
-							index[found_index_key] = (0, found_moves)
-							push!(candidates, found_index_key)
-
-							found_new = true
-
-							println("$iteration.  es $selected_score > $found_score (impr: $improvement_counter)")
-						end
-
-						if found_score > (index_max_score - step_back)
-							improvement_counter += 1
-						end
+				for key in collect(keys(index))
+					(visits, moves) = index[key]
+					if length(moves) >= (index_max_score - step_back)
+						push!(candidates, key)
 					end
 				end
 			end
 
-			println("$iteration. ES $selected_score f:$(length(result_index)) n:$(new_found_count) $(es_end - es_start)")
+			# Selecteion
+			index_key::UInt64 = if !should_linger
+				linger_counter = 0
+				selection_counter += 1
+				candidates[(selection_counter%length(candidates))+1]
+				# rand(candidates)
+			else
+				linger_counter += 1
+				index_key
+			end
 
-			# If no new configurations are found
-			# don't end search again
-			# if !found_new
-			end_searched[index_key] = true
+			(visits, moves) = index[index_key]
+			index[index_key] = (visits + 1, moves)
+			selected_score = length(moves)
+
+			max_linger = 1
+			# should_linger = (visits < (length(moves) * 100000) && linger_counter < (length(moves) * 10)) || (linger_counter < max_linger)
+			# should_linger = ((visits < (length(moves) * 1000)) || (visits > (length(moves) * 1000) && linger_counter < max_linger))
+			should_linger = visits < (length(moves) * 100000) && linger_counter < 10
+
+			visit_move = moves[(visits%length(moves))+1]
+
+			# Generation
+			if !haskey(dna_cache, index_key)
+				dna_cache[index_key] = generate_dna(moves)
+			end
+			test_dna = copy(dna_cache[index_key])
+
+			# Modification
+			test_dna[dna_index(visit_move)] = 0
+			# num_rand = floor(Int, visits / selected_score) % 5
+			# println("$visits $selected_score")
+			num_rand = (visits ÷ selected_score) % 3
+			# println("$num_rand")
+
+			# readline()
+			for _ in 0:num_rand
+				test_dna[dna_index(moves[rand(1:end)])] = 0
+			end
+
+			# Evaluation
+			eval_moves = eval_dna(test_dna, copy(empty_board), copy(empty_start_moves))
+			eval_score = length(eval_moves)
+
+			eval_points_hash = memoize_points_hash(eval_moves, points_hash_cache)
+
+			if haskey(dna_cache, eval_points_hash)
+				dna_cache[eval_points_hash] = generate_dna(eval_moves)
+			end
+
+			is_in_index = haskey(index, eval_points_hash)
+
+			if is_in_index
+				(v, m) = index[eval_points_hash]
+				index[eval_points_hash] = (v, eval_moves)
+			end
+
+			# A new global high score has been found
+			if eval_score > max_score
+				println("$iteration. ******* $eval_score")
+				max_score = eval_score
+				max_moves = eval_moves
+
+				step_back = 0
+				improvement_counter = 0
+			end
+
+			# If a new configuration is found
+			if !is_in_index
+
+				# Good scores are stored in the back up 
+				if (eval_score >= index_max_score - step_back - 2)
+					index[eval_points_hash] = (0, eval_moves)
+				end
+
+				if (eval_score >= index_max_score - step_back)
+					index[eval_points_hash] = (0, eval_moves)
+
+					#experimental
+					index[index_key] = (0, moves)
+
+					push!(candidates, eval_points_hash)
+
+					println("$iteration. $selected_score ($visits) > $eval_score (impr: $improvement_counter)")
+
+					num_new_generated_counter += 1
+				end
+
+				if eval_score > (index_max_score - step_back)
+					improvement_counter += 1
+				end
+			end
+
+			if eval_score > index_max_score
+				candidates = []
+				num_time_steps_no_new_generated_counter = 0
+			end
+
+			function map_into(range_start, range_end, horizon, count)::Int
+				v = (range_end + 1) - range_start
+				range_start + floor(((count % horizon) / horizon) * v)
+			end
+
+			# r = map_into(1, 300, 10_000_000, iteration)
+			# no_new_step_back_at = if r < 100
+			# 	5
+			# else
+			# 	r
 			# end
+
+			no_new_step_back_at = (iteration % 3_000_000 > 1_000_000) ? 200 : 10
+
+			# no_new_step_back_at = 50
+
+			if iteration > 0 && iteration % 10_000 == 0
+				# If this round we have only generated a few configurations
+				if num_new_generated_counter <= 1
+					num_time_steps_no_new_generated_counter += 1
+
+
+
+					# If we have reached the idle number of time steps that it makes sense to drop back
+					if num_time_steps_no_new_generated_counter >= no_new_step_back_at
+						step_back += 1
+
+						candidates = []
+						num_time_steps_no_new_generated_counter = 0
+					end
+				else
+					num_time_steps_no_new_generated_counter = 0
+				end
+
+				num_new_generated_counter = 0
+			end
+
+			# Occasional print the status of the current run (time step)
+			if iteration > 0 && iteration % num_iterations_time == 0
+				dt = time() - t
+
+				println(
+					"$iteration. cand:$(length(candidates)) index:$(length(index)) impr:$improvement_counter new:$num_new_generated_counter new_generated:$num_new_generated_counter nnsb:$no_new_step_back_at no_new:$num_time_steps_no_new_generated_counter $(index_max_score - step_back)/$index_max_score/$max_score $(round(dt, digits=2))",
+				)
+
+
+
+				t = time()
+			end
+
+			# Occasionally restart the search from the top
+			if iteration > 0 && iteration % 100_000_000 == 0
+				step_back = 0
+				candidates = []
+				num_time_steps_no_new_generated_counter = 0
+			end
+
+			# Occasionally Print the high score and moves
+			if iteration > 0 && iteration % 10_000_000 == 0
+				println(max_score)
+				println(max_moves)
+
+				empty!(dna_cache)
+				empty!(points_hash_cache)
+			end
+
+			# End Search
+			# Only begin end searching at a minimum of 100
+			if !haskey(end_searched, index_key) && selected_score >= 100
+
+				if selected_score > (index_max_score - step_back)
+					candidates = []
+					step_back = index_max_score - selected_score
+					num_time_steps_no_new_generated_counter = 0
+				end
+
+				es_start = time()
+				result_index = end_search(moves)
+				es_end = time()
+
+				max_score_found = 0
+
+				found_new = false
+				new_found_count = 0
+
+				if !isempty(result_index)
+					for found_index_key in collect(keys(result_index))
+						found_moves = result_index[found_index_key]
+						found_score = length(found_moves)
+
+						if !haskey(index, found_index_key)
+							if (found_score >= selected_score - 5)
+								index[found_index_key] = (0, found_moves)
+								new_found_count += 1
+							end
+
+							# If a new configuration is found
+							if (found_score >= index_max_score - step_back)
+								index[found_index_key] = (0, found_moves)
+								push!(candidates, found_index_key)
+
+								found_new = true
+
+								println("$iteration.  es $selected_score > $found_score (impr: $improvement_counter)")
+							end
+
+							if found_score > (index_max_score - step_back)
+								improvement_counter += 1
+							end
+						end
+					end
+				end
+
+				println("$iteration. ES $selected_score f:$(length(result_index)) n:$(new_found_count) $(es_end - es_start)")
+
+				# If no new configurations are found
+				# don't end search again
+				# if !found_new
+				end_searched[index_key] = true
+				# end
+			end
+
+			if improvement_counter >= 1
+				step_back = max(0, step_back - 1)
+				improvement_counter = 0
+
+				candidates = []
+				num_time_steps_no_new_generated_counter = 0
+			end
+
+			iteration += 1
 		end
-
-		if improvement_counter >= 1
-			step_back = max(0, step_back - 1)
-			improvement_counter = 0
-
-			candidates = []
-			num_time_steps_no_new_generated_counter = 0
-		end
-
-		iteration += 1
 	end
 end
 
@@ -715,3 +718,5 @@ main()
 # Move[Move(6, 4, 6, 0, 4), Move(2, 0, 2, 0, 2), Move(-1, 3, -1, 3, 2), Move(-1, 6, -1, 6, 2), Move(3, 4, 3, 0, 4), Move(0, 2, 0, 2, 4), Move(7, 2, 5, 0, 3), Move(9, 7, 9, 3, 4), Move(2, 2, 0, 4, 1), Move(3, 5, 3, 4, 4), Move(1, 5, -1, 3, 3), Move(1, 4, -1, 6, 1), Move(1, 2, 1, 2, 4), Move(4, 2, 0, 2, 2), Move(5, 3, 2, 0, 3), Move(4, 3, 3, 3, 2), Move(6, 5, 6, 4, 4), Move(5, 4, 3, 2, 3), Move(4, 5, 3, 6, 1), Move(5, 6, 1, 2, 3), Move(4, 6, 3, 6, 2), Move(2, 4, 0, 2, 3), Move(-1, 7, -1, 7, 1), Move(2, 1, 2, 0, 4), Move(-1, 4, -1, 4, 1), Move(-2, 4, -2, 4, 2), Move(-1, 5, -1, 3, 4), Move(2, 7, -1, 4, 3), Move(2, 5, -1, 5, 2), Move(4, 7, 0, 3, 3), Move(2, 8, 2, 4, 4), Move(1, 7, -2, 4, 3), Move(0, 7, -1, 7, 2), Move(-1, 8, -1, 8, 1), Move(1, 1, -2, 4, 1), Move(4, 4, 2, 4, 2), Move(4, 8, 4, 4, 4), Move(0, 8, 0, 8, 1), Move(1, 8, -1, 8, 2), Move(4, 1, 4, 0, 4), Move(5, 1, 1, 1, 2), Move(8, 4, 4, 0, 3), Move(5, 5, 2, 2, 3), Move(7, 5, 3, 5, 2), Move(1, 9, 1, 9, 1), Move(5, 7, 5, 7, 1), Move(7, 7, 3, 7, 2), Move(5, 8, 5, 4, 4), Move(7, 8, 3, 8, 2), Move(7, 4, 7, 4, 4), Move(10, 8, 6, 4, 3), Move(10, 4, 6, 8, 1), Move(11, 4, 7, 4, 2), Move(7, -1, 3, 3, 1), Move(1, 10, 1, 6, 4), Move(2, 9, 1, 10, 1), Move(0, 9, 0, 9, 2), Move(0, 10, 0, 6, 4), Move(-1, 10, -1, 10, 1), Move(3, 10, -1, 6, 3), Move(2, 11, 2, 11, 1), Move(2, 10, -1, 10, 2), Move(2, 12, 2, 8, 4), Move(3, 12, -1, 8, 3), Move(3, 11, 3, 8, 4), Move(4, 10, 2, 12, 1), Move(4, 12, 0, 8, 3), Move(4, 11, 4, 8, 4), Move(5, 10, 3, 12, 1), Move(9, 2, 5, 6, 1), Move(5, 2, 3, 0, 3), Move(8, 2, 4, 2, 2), Move(5, -1, 5, -1, 4), Move(7, 1, 5, -1, 3), Move(7, 0, 7, 0, 4), Move(8, -1, 4, 3, 1), Move(1, 11, 1, 11, 1), Move(5, 11, 1, 11, 2), Move(5, 12, 5, 8, 4), Move(6, 12, 2, 8, 3), Move(7, 12, 3, 12, 2), Move(6, 11, 3, 8, 3), Move(6, 10, 6, 8, 4), Move(7, 11, 3, 7, 3), Move(7, 10, 3, 10, 2), Move(8, 11, 4, 7, 3), Move(9, 11, 5, 11, 2), Move(7, 9, 7, 8, 4), Move(8, 8, 4, 12, 1), Move(8, 10, 5, 7, 3), Move(8, 9, 4, 9, 2), Move(9, 8, 5, 12, 1), Move(8, 7, 8, 7, 4), Move(10, 5, 7, 8, 1), Move(8, 5, 8, 3, 4), Move(10, 3, 6, 7, 1), Move(11, 5, 7, 5, 2), Move(9, 10, 5, 6, 3), Move(9, 9, 9, 7, 4), Move(10, 10, 6, 6, 3), Move(11, 10, 7, 10, 2), Move(10, 9, 7, 6, 3), Move(11, 8, 7, 12, 1), Move(10, 7, 7, 4, 3), Move(10, 11, 10, 7, 4), Move(10, 6, 10, 3, 4), Move(11, 6, 7, 6, 2), Move(11, 7, 7, 7, 2), Move(12, 6, 8, 10, 1), Move(11, 9, 11, 6, 4), Move(12, 9, 8, 9, 2), Move(13, 7, 9, 3, 3), Move(12, 8, 8, 4, 3), Move(13, 8, 9, 8, 2), Move(14, 7, 10, 11, 1), Move(12, 7, 9, 4, 3), Move(12, 5, 12, 5, 4), Move(13, 6, 10, 3, 3), Move(12, 4, 8, 8, 1), Move(15, 7, 11, 7, 2), Move(11, 3, 7, 3, 2), Move(11, 2, 11, 2, 4), Move(13, 4, 9, 8, 1), Move(13, 5, 13, 4, 4), Move(14, 6, 11, 3, 3), Move(15, 5, 11, 9, 1), Move(14, 5, 11, 5, 2), Move(15, 6, 11, 6, 2), Move(12, 3, 11, 2, 3), Move(15, 4, 11, 8, 1), Move(14, 4, 11, 4, 2), Move(14, 3, 14, 3, 4), Move(15, 3, 15, 3, 4), Move(13, 3, 11, 3, 2), Move(16, 2, 12, 6, 1), Move(9, 1, 5, 5, 1), Move(8, 1, 5, 1, 2), Move(8, 0, 8, -1, 4), Move(6, -1, 6, -1, 3), Move(10, 2, 7, -1, 3), Move(12, 2, 8, 2, 2), Move(7, -2, 3, 2, 1), Move(12, 1, 12, 1, 4), Move(11, 1, 11, 1, 3), Move(9, -1, 5, 3, 1), Move(9, 0, 9, -1, 4), Move(10, 0, 6, 0, 2), Move(10, 1, 7, -2, 3), Move(10, -1, 10, -1, 4), Move(11, -1, 7, -1, 2), Move(11, -2, 7, 2, 1), Move(13, 1, 9, 1, 2), Move(14, 0, 10, 4, 1), Move(11, 0, 11, -2, 4), Move(13, 2, 10, -1, 3), Move(13, 0, 13, 0, 4), Move(14, -1, 10, 3, 1), Move(12, 0, 10, 0, 2), Move(14, 2, 11, -1, 3), Move(13, -1, 9, 3, 1), Move(15, 2, 12, 2, 2), Move(14, 1, 14, -1, 4), Move(15, 0, 11, 4, 1), Move(12, -1, 11, -2, 3), Move(13, -2, 9, 2, 1), Move(15, -1, 11, -1, 2), Move(15, 1, 15, -1, 4), Move(12, -2, 12, -2, 3), Move(12, -3, 12, -3, 4), Move(16, 1, 12, -3, 3), Move(17, 1, 13, 1, 2), Move(17, 0, 13, 4, 1), Move(16, 0, 12, 4, 1), Move(18, 0, 14, 0, 2), Move(13, -3, 9, 1, 1), Move(13, -4, 13, -4, 4), Move(14, -2, 13, -3, 3), Move(15, -2, 11, -2, 2)]
 # 178
 # Move[Move(9, 2, 9, 2, 4), Move(7, 2, 5, 0, 3), Move(6, -1, 6, -1, 4), Move(3, -1, 3, -1, 4), Move(7, 0, 3, 0, 2), Move(2, 9, 2, 9, 2), Move(5, 3, 5, 3, 2), Move(4, 3, 1, 3, 2), Move(5, 6, 5, 6, 2), Move(4, 6, 1, 6, 2), Move(4, 1, 2, 3, 1), Move(5, 1, 3, -1, 3), Move(7, 1, 3, 1, 2), Move(7, 4, 7, 0, 4), Move(6, 5, 5, 6, 1), Move(6, 4, 6, 3, 4), Move(5, 5, 3, 7, 1), Move(7, 7, 5, 9, 1), Move(4, 4, 3, 3, 3), Move(3, 5, 3, 5, 1), Move(3, 4, 3, 3, 4), Move(5, 2, 3, 4, 1), Move(5, 4, 5, 2, 4), Move(8, 4, 5, 4, 2), Move(8, 2, 5, 2, 2), Move(2, -1, 2, -1, 3), Move(5, -1, 5, -1, 3), Move(2, 2, 1, 3, 1), Move(5, -2, 5, -2, 4), Move(4, -1, 2, -1, 2), Move(4, 2, 4, -1, 4), Move(1, 2, 1, 2, 2), Move(2, 4, 2, 4, 1), Move(1, 4, 1, 4, 2), Move(8, 1, 5, -2, 3), Move(8, 5, 8, 1, 4), Move(5, 8, 5, 8, 1), Move(2, 1, 1, 2, 1), Move(1, 0, 1, 0, 3), Move(2, 0, 2, -1, 4), Move(1, -1, 1, -1, 3), Move(1, 1, 1, -1, 4), Move(4, 5, 4, 5, 1), Move(0, 1, 0, 1, 3), Move(4, 7, 4, 3, 4), Move(2, 5, 2, 5, 3), Move(1, 5, 1, 5, 2), Move(2, 7, 2, 3, 4), Move(1, 7, 1, 3, 4), Move(-1, 1, -1, 1, 2), Move(0, 2, -1, 1, 3), Move(-1, 3, -1, 3, 1), Move(-2, 2, -2, 2, 3), Move(1, 10, 1, 10, 1), Move(5, 7, 1, 7, 2), Move(7, 5, 5, 7, 1), Move(7, 8, 7, 4, 4), Move(10, 7, 6, 3, 3), Move(0, 0, 0, 0, 4), Move(-3, 3, -3, 3, 1), Move(-1, -1, -1, -1, 3), Move(-1, 0, -1, 0, 2), Move(-2, 3, -3, 3, 2), Move(7, 9, 3, 5, 3), Move(5, 10, 1, 6, 3), Move(5, 11, 5, 7, 4), Move(10, 5, 6, 5, 2), Move(8, 7, 6, 9, 1), Move(9, 7, 6, 7, 2), Move(10, 8, 6, 4, 3), Move(-1, 2, -1, -1, 4), Move(-2, 1, -2, 1, 3), Move(-3, 4, -3, 4, 1), Move(-3, 2, -3, 2, 2), Move(-1, 4, -3, 2, 3), Move(-2, 4, -3, 4, 2), Move(-1, 5, -3, 3, 3), Move(-2, 5, -2, 1, 4), Move(-3, 5, -3, 5, 2), Move(-3, 6, -3, 6, 1), Move(-3, 7, -3, 3, 4), Move(-2, 6, -3, 7, 1), Move(-1, 6, -3, 6, 2), Move(-2, 7, -2, 7, 1), Move(-1, 7, -1, 3, 4), Move(-2, 8, -2, 8, 1), Move(-2, 9, -2, 5, 4), Move(0, 7, -3, 7, 2), Move(1, 8, -3, 4, 3), Move(0, 8, 0, 4, 4), Move(1, 9, -3, 5, 3), Move(-1, 9, -1, 9, 1), Move(0, 9, -2, 9, 2), Move(-1, 10, -1, 10, 1), Move(-1, 8, -1, 8, 1), Move(2, 8, -2, 8, 2), Move(-1, 11, -1, 7, 4), Move(0, 10, -1, 11, 1), Move(1, 11, -3, 7, 3), Move(4, 8, 2, 8, 2), Move(6, 10, 2, 6, 3), Move(6, 11, 6, 7, 4), Move(2, 10, 1, 11, 1), Move(2, 11, 2, 7, 4), Move(3, 12, -1, 8, 3), Move(-2, 10, -2, 10, 2), Move(4, 10, 1, 7, 3), Move(4, 11, 4, 7, 4), Move(3, 10, 2, 10, 2), Move(3, 11, 3, 7, 4), Move(0, 11, -1, 11, 2), Move(0, 12, 0, 8, 4), Move(5, 12, 1, 8, 3), Move(1, 12, 1, 12, 1), Move(1, 13, 1, 9, 4), Move(2, 12, 1, 13, 1), Move(4, 12, 0, 12, 2), Move(2, 14, -2, 10, 3), Move(3, 13, 2, 14, 1), Move(2, 13, 2, 13, 1), Move(7, 11, 3, 11, 2), Move(5, 13, 1, 9, 3), Move(4, 13, 1, 13, 2), Move(2, 15, 2, 11, 4), Move(3, 14, 2, 15, 1), Move(4, 15, 0, 11, 3), Move(3, 15, 3, 11, 4), Move(4, 14, 4, 11, 4), Move(5, 15, 1, 11, 3), Move(5, 14, 5, 11, 4), Move(6, 14, 2, 14, 2), Move(6, 15, 2, 15, 2), Move(7, 16, 3, 12, 3), Move(6, 12, 3, 15, 1), Move(6, 13, 6, 11, 4), Move(8, 9, 4, 5, 3), Move(8, 8, 8, 5, 4), Move(9, 8, 6, 8, 2), Move(7, 10, 6, 11, 1), Move(10, 6, 6, 10, 1), Move(11, 7, 7, 3, 3), Move(7, 12, 7, 8, 4), Move(8, 12, 4, 12, 2), Move(10, 9, 6, 5, 3), Move(9, 9, 6, 9, 2), Move(9, 10, 9, 6, 4), Move(8, 10, 7, 11, 1), Move(10, 10, 6, 10, 2), Move(10, 11, 10, 7, 4), Move(11, 11, 7, 7, 3), Move(8, 11, 5, 14, 1), Move(8, 13, 8, 9, 4), Move(9, 14, 5, 10, 3), Move(9, 11, 7, 11, 2), Move(7, 13, 5, 15, 1), Move(9, 13, 5, 13, 2), Move(9, 12, 9, 10, 4), Move(10, 14, 6, 10, 3), Move(7, 14, 6, 15, 1), Move(7, 15, 7, 12, 4), Move(8, 14, 6, 14, 2), Move(9, 15, 5, 11, 3), Move(10, 12, 7, 15, 1), Move(11, 13, 7, 9, 3), Move(10, 13, 6, 9, 3), Move(10, 15, 10, 11, 4), Move(8, 15, 6, 15, 2), Move(11, 12, 7, 16, 1), Move(12, 12, 8, 12, 2), Move(8, 16, 8, 16, 1), Move(9, 17, 5, 13, 3), Move(9, 16, 5, 12, 3), Move(9, 18, 9, 14, 4), Move(12, 13, 8, 9, 3), Move(8, 17, 8, 13, 4), Move(13, 13, 9, 13, 2), Move(11, 14, 8, 17, 1), Move(11, 15, 11, 11, 4)]
+# 178
+# Move[Move(0, 2, 0, 2, 4), Move(3, -1, 3, -1, 4), Move(4, 3, 0, 3, 2), Move(6, -1, 6, -1, 4), Move(2, 0, 2, 0, 2), Move(2, 7, 0, 5, 3), Move(7, 9, 3, 9, 2), Move(4, 6, 0, 6, 2), Move(2, 2, 0, 4, 1), Move(5, 3, 4, 3, 2), Move(5, 6, 4, 6, 2), Move(5, 1, 3, -1, 3), Move(4, 1, 2, 3, 1), Move(2, 1, 2, 1, 2), Move(2, 4, 2, 0, 4), Move(3, 5, 0, 2, 3), Move(3, 4, 3, 3, 4), Move(4, 5, 2, 3, 3), Move(5, 4, 2, 7, 1), Move(6, 5, 2, 1, 3), Move(6, 4, 6, 3, 4), Move(4, 2, 2, 0, 3), Move(7, -1, 3, 3, 1), Move(1, 2, 0, 2, 2), Move(4, 4, 4, 2, 4), Move(1, 4, 0, 4, 2), Move(4, -1, 0, 3, 1), Move(4, -2, 4, -2, 4), Move(7, 2, 4, -1, 3), Move(5, -1, 3, -1, 2), Move(5, 2, 5, -1, 4), Move(7, 4, 3, 0, 3), Move(8, 2, 4, 2, 2), Move(7, 1, 4, -2, 3), Move(7, 0, 7, -1, 4), Move(8, -1, 4, 3, 1), Move(8, 4, 4, 4, 2), Move(8, 0, 4, 4, 1), Move(8, 1, 8, -1, 4), Move(1, 1, 0, 2, 1), Move(1, 5, 1, 1, 4), Move(4, 8, 0, 4, 3), Move(-1, 7, -1, 7, 1), Move(5, 5, 1, 1, 3), Move(9, 1, 5, 5, 1), Move(10, 1, 6, 1, 2), Move(5, 7, 5, 3, 4), Move(7, 5, 3, 9, 1), Move(8, 5, 4, 5, 2), Move(9, 2, 6, 5, 1), Move(7, 7, 7, 3, 4), Move(4, 7, 3, 7, 2), Move(2, 9, 2, 9, 1), Move(4, 10, 4, 10, 1), Move(4, 11, 4, 7, 4), Move(10, 3, 6, -1, 3), Move(2, 5, 0, 3, 3), Move(2, 8, 2, 4, 4), Move(8, 7, 8, 3, 4), Move(-1, 5, -1, 5, 2), Move(9, 0, 9, 0, 4), Move(10, 0, 6, 0, 2), Move(10, -1, 6, 3, 1), Move(10, 2, 10, -1, 4), Move(11, 1, 7, 5, 1), Move(1, 7, -1, 5, 3), Move(0, 7, -1, 7, 2), Move(-1, 8, -1, 8, 1), Move(11, 2, 7, 6, 1), Move(12, 2, 8, 2, 2), Move(12, 3, 8, -1, 3), Move(11, 3, 8, 3, 2), Move(10, 4, 8, 6, 1), Move(12, 4, 8, 0, 3), Move(11, 4, 8, 4, 2), Move(11, 5, 11, 1, 4), Move(12, 6, 8, 2, 3), Move(10, 5, 8, 7, 1), Move(12, 5, 8, 5, 2), Move(12, 7, 12, 3, 4), Move(11, 6, 8, 3, 3), Move(10, 6, 8, 6, 2), Move(10, 7, 10, 3, 4), Move(11, 8, 7, 4, 3), Move(11, 7, 7, 3, 3), Move(11, 9, 11, 5, 4), Move(9, 7, 7, 7, 2), Move(9, 8, 9, 4, 4), Move(10, 9, 6, 5, 3), Move(8, 9, 8, 9, 1), Move(8, 8, 8, 8, 1), Move(9, 9, 7, 9, 2), Move(10, 10, 6, 6, 3), Move(10, 8, 7, 5, 3), Move(7, 8, 7, 8, 2), Move(5, 8, 3, 8, 2), Move(10, 11, 10, 7, 4), Move(3, 10, 3, 10, 1), Move(5, 10, 4, 11, 1), Move(9, 10, 6, 7, 3), Move(8, 11, 8, 11, 1), Move(3, 11, 3, 7, 4), Move(5, 11, 5, 7, 4), Move(7, 10, 4, 7, 3), Move(6, 10, 3, 10, 2), Move(6, 11, 6, 7, 4), Move(7, 11, 7, 7, 4), Move(8, 12, 4, 8, 3), Move(4, 12, 4, 12, 1), Move(2, 11, 2, 11, 2), Move(9, 11, 6, 11, 2), Move(9, 12, 9, 8, 4), Move(8, 10, 5, 7, 3), Move(11, 10, 7, 10, 2), Move(6, 12, 6, 12, 1), Move(8, 13, 8, 9, 4), Move(7, 13, 3, 9, 3), Move(7, 14, 7, 14, 1), Move(7, 12, 4, 9, 3), Move(5, 12, 5, 12, 2), Move(6, 13, 3, 10, 3), Move(7, 15, 7, 11, 4), Move(1, 9, 1, 9, 1), Move(1, 8, 1, 5, 4), Move(0, 8, -1, 8, 2), Move(2, 10, -1, 7, 3), Move(-1, 6, -1, 6, 3), Move(-2, 7, -2, 7, 1), Move(2, 12, 2, 8, 4), Move(-1, 9, -1, 9, 1), Move(0, 9, -1, 9, 2), Move(0, 10, 0, 6, 4), Move(1, 10, -2, 7, 3), Move(-1, 10, -1, 10, 2), Move(-1, 11, -1, 7, 4), Move(-2, 11, -2, 11, 1), Move(4, 13, 4, 13, 1), Move(5, 13, 4, 13, 2), Move(6, 14, 3, 11, 3), Move(6, 15, 6, 11, 4), Move(5, 15, 5, 15, 1), Move(5, 14, 5, 11, 4), Move(4, 15, 4, 15, 1), Move(3, 15, 3, 15, 2), Move(4, 14, 4, 11, 4), Move(3, 14, 3, 14, 2), Move(2, 16, 2, 16, 1), Move(3, 12, 2, 11, 3), Move(3, 13, 3, 11, 4), Move(1, 12, 1, 12, 2), Move(1, 11, 1, 11, 3), Move(1, 13, 1, 9, 4), Move(0, 14, 0, 14, 1), Move(0, 11, -2, 11, 2), Move(2, 13, -1, 10, 3), Move(0, 13, 0, 13, 2), Move(0, 12, 0, 10, 4), Move(2, 14, -1, 11, 3), Move(2, 15, 2, 12, 4), Move(-1, 13, -1, 13, 1), Move(-1, 14, -1, 14, 1), Move(1, 14, -1, 14, 2), Move(0, 15, 0, 15, 1), Move(-1, 12, -2, 11, 3), Move(-2, 13, -2, 13, 1), Move(-1, 15, -1, 11, 4), Move(1, 15, -1, 15, 2), Move(-2, 12, -2, 12, 3), Move(-3, 12, -3, 12, 2), Move(0, 16, 0, 16, 1), Move(1, 16, -3, 12, 3), Move(0, 17, 0, 17, 1), Move(1, 17, 1, 13, 4), Move(-3, 13, -3, 13, 1), Move(0, 18, 0, 14, 4), Move(-4, 13, -4, 13, 2), Move(-2, 14, -3, 13, 3), Move(-2, 15, -2, 11, 4)]
