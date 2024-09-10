@@ -449,6 +449,118 @@ function verify(morpion::Morpion, original::Morpion, the::Morpion)
 
 end
 
+function remove_move(moves::Array{Move, 1}, possible_moves::Array{Move, 1}, board::Array{UInt8, 1}, move::Move)
+	# remove the move from the taken moves
+	deleteat!(moves, findfirst(m -> m == move, moves))
+
+	# add the move to the list of possible moves
+	push!(possible_moves, move)
+
+	# update the board to reflect the removal of the move
+	board[board_index(move.x, move.y)] &= ~mask_x
+
+	delta_x, delta_y = direction_offset[move.direction]
+	mask = mask_dir[move.direction]
+	for i in 0:4
+		x = move.start_x + delta_x * i
+		y = move.start_y + delta_y * i
+		#println("before ($x,$y): $(bits(evaluator.board[board_index(x,y)]))")
+		board[board_index(x, y)] &= ~mask
+		#println("after ($x,$y):  $(bits(evaluator.board[board_index(x,y)]))")
+	end
+
+	# it might be the case that this move shared an end point with another move's line.
+	# since we updated the board for the full length of this move, we have to go back
+	# and reactivate the board position for the point that was unintentially undone.
+
+
+	# update the moves that might have been affected (must share direction)
+	# (this could be more efficient but not too bad)
+	for taken_move in moves
+		if move.direction == taken_move.direction
+			update_board(board, taken_move)
+		end
+	end
+
+	# now that the move position is available we scan the rays
+	# to find possible moves that were available at this point
+	for direction in 1:4
+
+		delta_x, delta_y = direction_offset[direction]
+
+		#println(direction_names[direction])
+
+		for offset in -4:0
+
+			test_x = move.x + delta_x * offset
+			test_y = move.y + delta_y * offset
+
+			position = validate_line(board, test_x, test_y, direction)
+
+			if position != ()
+
+				new_move = Move(position[1], position[2], test_x, test_y, direction)
+
+				if !in(new_move, possible_moves)
+
+					push!(possible_moves, new_move)
+					#println("adding: $new_move")
+				end
+			end
+
+		end
+	end
+
+	# it could be the case that when this move was made it removed an interesecting move outside of the rays
+	# an extended search is required outside the bounds of the rays along the direction of the move
+	delta_x, delta_y = direction_offset[move.direction]
+	for offset in 1:3
+		test_x = move.start_x + delta_x * offset
+		test_y = move.start_y + delta_y * offset
+
+		position = validate_line(board, test_x, test_y, move.direction)
+
+		if position != ()
+			new_move = Move(position[1], position[2], test_x, test_y, move.direction)
+			if !in(new_move, possible_moves)
+
+				push!(possible_moves, new_move)
+				#println("adding: $new_move")
+			end
+		end
+	end
+
+	for offset in 1:3
+		test_x = move.start_x - delta_x * offset
+		test_y = move.start_y - delta_y * offset
+
+		position = validate_line(board, test_x, test_y, move.direction)
+
+		if position != ()
+			new_move = Move(position[1], position[2], test_x, test_y, move.direction)
+			if !in(new_move, possible_moves)
+
+				push!(possible_moves, new_move)
+				#println("adding: $new_move")
+			end
+		end
+	end
+
+
+
+	# we have to remove any moves that are no longer possible
+	#filter!( (m::Move) -> validate_line(evaluator.board, m.start_x ,m.start_y , m.direction) != () , evaluator.possible_moves)
+
+	filter!(possible_moves) do m::Move
+		t = validate_line(board, m.start_x, m.start_y, m.direction) != ()
+
+		if !t
+			#println("removing: $(m)")
+		end
+
+		t
+	end
+end
 
 function remove_move(evaluator::MorpionEvaluator, move::Move)
 
