@@ -2,6 +2,7 @@ import Base.hash
 import Base.copy
 import Base.==
 import Bits.bits
+using DataStructures
 
 #  R  XXXX
 #     X  X
@@ -64,12 +65,16 @@ function isless(a::Morpion, b::Morpion)
   score(a) < score(b)
 end
 
+# @inline function board_index(x::Number, y::Number)
+#   (x + 18) * 46 + (y + 18)
+# end
 @inline function board_index(x::Number, y::Number)
-  (x + 18) * 46 + (y + 18)
+  (x + 18) * 46 + (y + 18) + 1
 end
 
+
 @inline function dna_index(x::Number, y::Number, direction::Number)
-  (x + 18) * 46 * 4 + (y + 18) * 4 + direction
+  (x + 18) * 46 * 4 + (y + 18) * 4 + direction + 1
 end
 
 @inline function dna_index(move::Move)
@@ -711,48 +716,30 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 end
 
 @inline function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move,1})
-
-
-  #println("making: $move")
-
-
-  #@assert in(move, possible_moves) "attempting to make move not in possible moves"
-
   @inbounds begin
     update_board(board, move)
     filter!((move::Move) -> validate_line(board, move.start_x, move.start_y, move.direction) != (), possible_moves)
   end
 
-
   for direction in 1:4
-
     delta_x, delta_y = direction_offset[direction]
-
-    #println(direction_names[direction])
-
     for offset in -4:0
-
       test_x = move.x + delta_x * offset
       test_y = move.y + delta_y * offset
 
       position = validate_line(board, test_x, test_y, direction)
 
       if position != ()
-
         new_move = Move(position[1], position[2], test_x, test_y, direction)
 
         # TODO this in operation might be avoided if we use a set
         if !in(new_move, possible_moves)
-
           push!(possible_moves, new_move)
-          #println("adding: $new_move")
         end
       end
-
     end
   end
 end
-
 
 function base64hex(char::Char)
   enc = 0
@@ -993,6 +980,111 @@ end
 
 # 	morpion
 # end
+
+@inline function eval_dna_and_hash(dna::Array{UInt16,1})
+  board = initial_board()
+  possible_moves = initial_moves()
+  made_moves = Move[]
+  points_hash_board = zeros(Bool, 46 * 46)
+
+  # board = zeros(Bool, 46 * 46)
+  # @inbounds for move in moves
+  #   board[board_index(move.x, move.y)] = true
+  # end
+  # hash(board)
+
+  function eval_reducer(a::Move, b::Move)
+    a_value = dna[dna_index(a)]
+    b_value = dna[dna_index(b)]
+
+    a_value > b_value ? a : b
+  end
+
+  @inbounds begin
+    while !isempty(possible_moves)
+      move = reduce(eval_reducer, possible_moves)
+
+      push!(made_moves, move)
+      make_move(board, move, possible_moves)
+      points_hash_board[board_index(move.x, move.y)] = true
+    end
+  end
+
+  (made_moves, hash(points_hash_board))
+end
+
+@inline function eval_dna_and_hash_optimized(dna::Array{UInt16,1})
+  board = copy(initial_board_master)
+  possible_moves = initial_moves()
+  made_moves = Vector{Move}()
+  sizehint!(made_moves, 200)
+  points_hash_board = zeros(Bool, 46 * 46)
+
+  @inbounds while !isempty(possible_moves)
+    # Manual reduce - faster than reduce() function
+    best_move = possible_moves[1]
+    best_value = dna[dna_index(best_move)]
+
+    for i in 2:length(possible_moves)
+      move_value = dna[dna_index(possible_moves[i])]
+      if move_value > best_value
+        best_value = move_value
+        best_move = possible_moves[i]
+      end
+    end
+
+    push!(made_moves, best_move)
+    make_move(board, best_move, possible_moves)
+    points_hash_board[board_index(best_move.x, best_move.y)] = true
+  end
+
+  (made_moves, hash(points_hash_board))
+end
+
+function build_move_policy(moves)
+  score = length(moves)
+  OrderedDict(value => Int32(score - index) for (index, value) in pairs(moves))
+end
+
+function eval_dna_and_hash_move_policy(move_policy::OrderedDict{Move,Int32})
+  board = copy(initial_board_master)
+  possible_moves = initial_moves()
+  made_moves = Vector{Move}()
+  sizehint!(made_moves, 200)
+  points_hash_board = zeros(Bool, 46 * 46)
+
+  @inbounds while !isempty(possible_moves)
+    # Manual reduce - faster than reduce() function
+    best_move = possible_moves[1]
+    # best_value = dna[dna_index(best_move)]
+    best_value =
+      if haskey(move_policy, best_move)
+        move_policy[best_move]
+      else
+        -rand(1:100)
+      end
+
+    for i in 2:length(possible_moves)
+      # move_value = dna[dna_index(possible_moves[i])]
+      move_value =
+        if haskey(move_policy, possible_moves[i])
+          move_policy[possible_moves[i]]
+        else
+          -rand(1:100)
+        end
+      if move_value > best_value
+        best_value = move_value
+        best_move = possible_moves[i]
+      end
+    end
+
+    push!(made_moves, best_move)
+    make_move(board, best_move, possible_moves)
+    points_hash_board[board_index(best_move.x, best_move.y)] = true
+  end
+
+  (made_moves, hash(points_hash_board))
+end
 
 
 @inline function eval_dna(dna::Array{UInt16,1})
