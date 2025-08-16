@@ -80,7 +80,7 @@ function main()
   iteration = 0
 
   inactivity_counter = 0
-  inactivity_counter_reset = 1000000
+  inactivity_counter_reset = 300000
   inactivity_new_found_counter = 0
   inactivity_new_found_reset = 10
   step_back = 0
@@ -102,7 +102,7 @@ function main()
     for key in rand(index_keys, 10)
       p_policy, p_visits = index[key]
       p_score = length(p_policy)
-      key_score = p_score - (p_visits / 100000.0)
+      key_score = p_score - (p_visits / 500000.0)
 
       if key_score < max_score - step_back
         0
