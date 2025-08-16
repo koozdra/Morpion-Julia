@@ -1,5 +1,6 @@
 include("morpion.jl")
 using Random
+using DataStructures
 
 function end_search(moves::Array{Move,1})
   score = length(moves)
@@ -10,12 +11,17 @@ function end_search(moves::Array{Move,1})
   # Progressively wind back the moves taken on a board
   for step_back in 1:floor(Int64, score * 0.25)
     # Make the subset of moves on the board
+    # move_policy = OrderedDict{Move,Int32}()
     board = initial_board()
     possible_moves = initial_moves()
     made_moves = Move[]
+
+    move_index = 1
     for move in moves[1:end-step_back]
       push!(made_moves, move)
       make_move(board, move, possible_moves)
+      # move_policy[move] = score - move_index - 1
+      # move_index += 1
     end
 
     # Perform a random completion from where the moves left off
@@ -27,14 +33,19 @@ function end_search(moves::Array{Move,1})
       eval_possible_moves = copy(possible_moves)
       eval_made_moves = copy(made_moves)
 
+      eval_move_index = move_index
+
       while !isempty(eval_possible_moves)
         random_possible_move = eval_possible_moves[rand(1:end)]
         push!(eval_made_moves, random_possible_move)
         make_move(eval_board, random_possible_move, eval_possible_moves)
+        # move_policy[random_possible_move] = eval_move_index
+        # eval_move_index += 1
       end
 
       eval_score = length(eval_made_moves)
-      eval_points_hash = points_hash(eval_made_moves)
+      _, eval_points_hash = eval_dna_and_hash_move_policy_uint64(build_move_policy(eval_made_moves))
+      # eval_points_hash = points_hash(eval_made_moves)
 
       if eval_score > score + back_accept_modifier && !haskey(index, eval_points_hash)
         index[eval_points_hash] = eval_made_moves
