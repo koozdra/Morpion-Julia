@@ -195,7 +195,7 @@ function main()
       end
 
       # TODO: this should return the move policy so it doesn't have to be built later
-      eval_moves, eval_points_hash = eval_dna_and_hash_move_policy!(eval_policy, eval_board, eval_possible_moves, eval_made_moves, eval_points_hash_board)
+      eval_moves, eval_points_hash = eval_dna_and_hash_move_policy(eval_policy)
       eval_score = length(eval_moves)
 
       # # trace
