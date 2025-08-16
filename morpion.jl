@@ -1086,6 +1086,55 @@ function eval_dna_and_hash_move_policy(move_policy::OrderedDict{Move,Int32})
   (made_moves, hash(points_hash_board))
 end
 
+function eval_dna_and_hash_move_policy_uint64(move_policy::OrderedDict{Move,Int32})
+  board = copy(initial_board_master)
+  possible_moves = initial_moves()
+  made_moves = Vector{Move}()
+  sizehint!(made_moves, 200)
+
+  # Use UInt64 bit board instead of Bool array
+  board_size_bits = 46 * 46
+  board_size_uint64 = cld(board_size_bits, 64)
+  points_hash_board = zeros(UInt64, board_size_uint64)
+
+  @inbounds while !isempty(possible_moves)
+    # Manual reduce - faster than reduce() function
+    best_move = possible_moves[1]
+    # best_value = dna[dna_index(best_move)]
+    best_value =
+      if haskey(move_policy, best_move)
+        move_policy[best_move]
+      else
+        -rand(1:100)
+      end
+
+    for i in 2:length(possible_moves)
+      # move_value = dna[dna_index(possible_moves[i])]
+      move_value =
+        if haskey(move_policy, possible_moves[i])
+          move_policy[possible_moves[i]]
+        else
+          -rand(1:100)
+        end
+      if move_value > best_value
+        best_value = move_value
+        best_move = possible_moves[i]
+      end
+    end
+
+    push!(made_moves, best_move)
+    make_move(board, best_move, possible_moves)
+
+    # Set bit in UInt64 array instead of Bool array
+    idx = board_index(best_move.x, best_move.y) - 1  # Convert to 0-based
+    int_idx = cld(idx + 1, 64)  # Which UInt64 chunk (ceiling division)
+    bit_idx = idx % 64          # Which bit in that chunk
+    points_hash_board[int_idx] |= (UInt64(1) << bit_idx)
+  end
+
+  (made_moves, hash(points_hash_board))
+end
+
 function eval_dna_and_hash_move_policy!(move_policy::OrderedDict{Move,Int32},
   board::Array{UInt8,1},
   possible_moves::Array{Move,1},
