@@ -69,6 +69,14 @@ function build_perm(moves::Vector{Move})
   return perm
 end
 
+# Preallocated arrays for eval_dna_and_hash_move_policy!
+eval_board = zeros(UInt8, 46 * 46)
+eval_possible_moves = Vector{Move}()
+sizehint!(eval_possible_moves, 200)
+eval_made_moves = Vector{Move}()
+sizehint!(eval_made_moves, 200)
+eval_points_hash_board = zeros(Bool, 46 * 46)
+
 function main()
   perm_length = 46 * 46 * 4
   perm = UInt16.(1:perm_length)
@@ -187,7 +195,7 @@ function main()
       end
 
       # TODO: this should return the move policy so it doesn't have to be built later
-      eval_moves, eval_points_hash = eval_dna_and_hash_move_policy(eval_policy)
+      eval_moves, eval_points_hash = eval_dna_and_hash_move_policy!(eval_policy, eval_board, eval_possible_moves, eval_made_moves, eval_points_hash_board)
       eval_score = length(eval_moves)
 
       # # trace

@@ -1086,6 +1086,49 @@ function eval_dna_and_hash_move_policy(move_policy::OrderedDict{Move,Int32})
   (made_moves, hash(points_hash_board))
 end
 
+function eval_dna_and_hash_move_policy!(move_policy::OrderedDict{Move,Int32},
+  board::Array{UInt8,1},
+  possible_moves::Array{Move,1},
+  made_moves::Vector{Move},
+  points_hash_board::Array{Bool,1})
+  # Clear and initialize preallocated arrays
+  copyto!(board, initial_board_master)
+  empty!(possible_moves)
+  append!(possible_moves, initial_moves())
+  empty!(made_moves)
+  fill!(points_hash_board, false)
+
+  @inbounds while !isempty(possible_moves)
+    # Manual reduce - faster than reduce() function
+    best_move = possible_moves[1]
+    best_value =
+      if haskey(move_policy, best_move)
+        move_policy[best_move]
+      else
+        -rand(1:100)
+      end
+
+    for i in 2:length(possible_moves)
+      move_value =
+        if haskey(move_policy, possible_moves[i])
+          move_policy[possible_moves[i]]
+        else
+          -rand(1:100)
+        end
+      if move_value > best_value
+        best_value = move_value
+        best_move = possible_moves[i]
+      end
+    end
+
+    push!(made_moves, best_move)
+    make_move(board, best_move, possible_moves)
+    points_hash_board[board_index(best_move.x, best_move.y)] = true
+  end
+
+  (made_moves, hash(points_hash_board))
+end
+
 
 @inline function eval_dna(dna::Array{UInt16,1})
   eval_dna(dna, initial_board(), initial_moves())
