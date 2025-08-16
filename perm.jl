@@ -80,9 +80,9 @@ function main()
   iteration = 0
 
   inactivity_counter = 0
-  inactivity_counter_reset = 300000
+  inactivity_counter_reset = 1000000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 10
+  inactivity_new_found_reset = 100
   step_back = 0
 
   debug_interval = 100000
@@ -102,7 +102,7 @@ function main()
     for key in rand(index_keys, 10)
       p_policy, p_visits = index[key]
       p_score = length(p_policy)
-      key_score = p_score - (p_visits / 500000.0)
+      key_score = p_score - (p_visits / 1000000.0)
 
       if key_score < max_score - step_back
         0
@@ -163,7 +163,7 @@ function main()
         end
       end
 
-      println("$iteration. ES $selected_score f:$(length(result_index)) n:$(new_found_count) $(es_end - es_start)")
+      println("$iteration. ES $selected_score f:$(length(result_index)) n:$(new_found_count) $(round(es_end - es_start, digits=2))")
 
       end_searched[selected_key] = true
     else
