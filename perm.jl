@@ -44,8 +44,9 @@ function end_search(moves::Array{Move,1})
       end
 
       eval_score = length(eval_made_moves)
-      _, eval_points_hash = eval_dna_and_hash_move_policy_uint64(build_move_policy(eval_made_moves))
-      # eval_points_hash = points_hash(eval_made_moves)
+      # extremely slow, must be improved (has to build the policy and then the hash, two iterations through the moves in the hot loop)
+      # _, eval_points_hash = eval_dna_and_hash_move_policy_uint64(build_move_policy(eval_made_moves))
+      eval_points_hash = points_hash(eval_made_moves)
 
       if eval_score > score + back_accept_modifier && !haskey(index, eval_points_hash)
         index[eval_points_hash] = eval_made_moves
@@ -94,7 +95,7 @@ function main()
   shuffle!(perm)
   perm_moves, perm_moves_hash = eval_dna_and_hash(perm)
 
-  max_score = 0
+  max_score = length(perm_moves)
   max_moves = []
   iteration = 0
 
@@ -110,9 +111,8 @@ function main()
   index = Dict(perm_moves_hash => (build_move_policy(perm_moves), 0))
   index_keys = [perm_moves_hash]
 
-  taboo_index = Dict()
-
   end_searched = Dict{UInt64,Bool}()
+
 
   while true
 
@@ -142,7 +142,7 @@ function main()
 
     index[selected_key] = (move_policy, selected_visits + 1)
 
-    if !haskey(end_searched, selected_key) && !haskey(taboo_index, selected_key) && selected_score > 100
+    if !haskey(end_searched, selected_key) && selected_score > 100
 
       es_start = time()
       result_index = end_search(collect(keys(move_policy)))
@@ -152,15 +152,18 @@ function main()
 
       if !isempty(result_index)
         for found_index_key in collect(keys(result_index))
+
+
           found_moves = result_index[found_index_key]
           found_score = length(found_moves)
 
-          is_in_taboo = haskey(taboo_index, found_index_key)
+          _, f_key = eval_dna_and_hash_move_policy_uint64(build_move_policy(found_moves))
 
-          if !haskey(index, found_index_key) && !is_in_taboo
+
+          if !haskey(index, f_key)
             if (found_score >= max_score - step_back)
-              index[found_index_key] = (build_move_policy(found_moves), 0)
-              push!(index_keys, found_index_key)
+              index[f_key] = (build_move_policy(found_moves), 0)
+              push!(index_keys, f_key)
 
               println("$iteration.  es $selected_score > $found_score")
 
@@ -174,8 +177,8 @@ function main()
 
                 println("$iteration. ******** $max_score")
 
-                index = Dict(found_index_key => (build_move_policy(found_moves), 0))
-                index_keys = [found_index_key]
+                index = Dict(f_key => (build_move_policy(found_moves), 0))
+                index_keys = [f_key]
               end
             end
           end
@@ -189,21 +192,10 @@ function main()
 
       # TODO: do something about this copy
       eval_policy = copy(move_policy)
-      eval_policy_key_set = keys(move_policy)
-      eval_score = length(eval_policy_key_set)
+      eval_policy_key_set = keys(eval_policy)
+      eval_policy_score = length(eval_policy_key_set)
 
-      eval_policy[collect(eval_policy_key_set)[selected_visits%eval_score+1]] = -100
-      # eval_policy[rand(keys(move_policy))] = -100
-      # for i in rand(0:2)
-      #   eval_policy[rand(eval_policy_key_set)] = -100
-      # end
-      if floor(selected_visits / eval_score) % 2 == 1
-        # eval_policy[rand(eval_policy_key_set)] = -100
-        # eval_policy[rand(eval_policy_key_set)] = -100
-        for i in rand(1:2)
-          eval_policy[rand(eval_policy_key_set)] = -100
-        end
-      end
+      eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
 
       # TODO: this should return the move policy so it doesn't have to be built later
       eval_moves, eval_points_hash = eval_dna_and_hash_move_policy_uint64(eval_policy)
@@ -211,7 +203,7 @@ function main()
 
       # # trace
       if iteration % 10000 == 0
-        println("$iteration. $selected_score ($selected_visits) ma:$(max_score - step_back)/$max_score")
+        println("$iteration. $selected_score ($selected_visits) $(length(eval_moves)) ma:$(max_score - step_back)/$max_score")
       end
 
       if (eval_score > max_score)
@@ -224,32 +216,54 @@ function main()
         index = Dict(eval_points_hash => (build_move_policy(eval_moves), 0))
         index_keys = [eval_points_hash]
 
+        # t_moves, t_hash = eval_dna_and_hash_move_policy_uint64(build_move_policy(eval_moves))
+
+        # println("t_hash: $t_hash")
+
+
+        # for (key, value) in index
+        #   p_policy, p_visits = value
+        #   p_score = length(p_policy)
+        #   _, h = eval_dna_and_hash_move_policy_uint64(p_policy)
+        #   is_match = key == h
+        #   println("$p_score: $p_visits $is_match $key $h")
+        # end
+
+
+        # println(eval_points_hash)
+        # println(index)
+        # println(index_keys)
+
+        # readline()
+
+
       else
         is_in_index = haskey(index, eval_points_hash)
-        is_in_taboo = haskey(taboo_index, eval_points_hash)
 
-        if !is_in_taboo
-          if !is_in_index
 
-            if eval_score >= (max_score - step_back)
-              push!(index_keys, eval_points_hash)
-              println("$iteration. $selected_score ($selected_visits) -> $eval_score")
+        if !is_in_index
 
-              p_policy, p_visits = index[selected_key]
-              index[selected_key] = (p_policy, 0)
+          if eval_score >= (max_score - step_back)
 
-              if eval_score > (max_score - step_back)
-                inactivity_new_found_counter += 1
-              end
+            println("$iteration. $selected_score ($selected_visits) -> $eval_score")
 
-              inactivity_counter = 0
-              index[eval_points_hash] = (build_move_policy(eval_moves), 0)
+            p_policy, p_visits = index[selected_key]
+            index[selected_key] = (p_policy, 0)
+
+            if eval_score > (max_score - step_back)
+              inactivity_new_found_counter += 1
             end
-          else
-            p_policy, p_visits = index[eval_points_hash]
-            index[eval_points_hash] = (build_move_policy(eval_moves), p_visits)
+
+            inactivity_counter = 0
+
+            index[eval_points_hash] = (build_move_policy(eval_moves), 0)
+            push!(index_keys, eval_points_hash)
           end
+        else
+          p_policy, p_visits = index[eval_points_hash]
+          index[eval_points_hash] = (build_move_policy(eval_moves), p_visits)
         end
+
       end
     end
 
@@ -262,10 +276,11 @@ function main()
       last_debug_time = current_time
 
       # for (key, value) in index
-      #   p, p_moves, p_visits = value
-      #   p_score = length(p_moves)
-      #   t = eval_dna(p) == p_moves
-      #   println("$p_score: $p_visits $t")
+      #   p_policy, p_visits = value
+      #   p_score = length(p_policy)
+      #   m, h = eval_dna_and_hash_move_policy_uint64(p_policy)
+      #   is_match = key == h
+      #   println("$p_score: $p_visits $is_match $(length(m))")
       # end
 
       # empty!(end_searched)

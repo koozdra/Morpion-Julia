@@ -1043,7 +1043,7 @@ end
 
 function build_move_policy(moves)
   score = length(moves)
-  OrderedDict(value => Int32(score - index) for (index, value) in pairs(moves))
+  OrderedDict(value => Int32(score - (index - 1)) for (index, value) in pairs(moves))
 end
 
 function eval_dna_and_hash_move_policy(move_policy::OrderedDict{Move,Int32})
