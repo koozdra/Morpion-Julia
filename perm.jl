@@ -201,7 +201,7 @@ function main()
 
       eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
 
-      if floor(selected_visits / eval_policy_score) % 2 == 1
+      if (selected_visits ÷ eval_policy_score) % 2 == 1
         eval_policy[rand(eval_policy_key_set)] = -100
         eval_policy[rand(eval_policy_key_set)] = -100
       end
