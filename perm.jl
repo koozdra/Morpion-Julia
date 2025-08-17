@@ -119,13 +119,13 @@ function main()
     max_key = nothing
     max_key_score = 0
     for key in rand(index_keys, 10)
+      # for key in index_keys
       p_policy, p_visits = index[key]
       p_score = length(p_policy)
+
       key_score = p_score - (p_visits / 1000000.0)
 
-      if key_score < max_score - step_back
-        0
-      elseif key_score > max_key_score
+      if key_score > max_key_score
         max_key = key
         max_key_score = key_score
       end
@@ -179,6 +179,10 @@ function main()
 
                 index = Dict(f_key => (build_move_policy(found_moves), 0))
                 index_keys = [f_key]
+
+                step_back = 0
+                inactivity_counter = 0
+                inactivity_new_found_counter = 0
               end
             end
           end
@@ -197,13 +201,18 @@ function main()
 
       eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
 
+      if floor(selected_visits / eval_policy_score) % 2 == 1
+        eval_policy[rand(eval_policy_key_set)] = -100
+        eval_policy[rand(eval_policy_key_set)] = -100
+      end
+
       # TODO: this should return the move policy so it doesn't have to be built later
       eval_moves, eval_points_hash = eval_dna_and_hash_move_policy_uint64(eval_policy)
       eval_score = length(eval_moves)
 
       # # trace
       if iteration % 10000 == 0
-        println("$iteration. $selected_score ($selected_visits) $(length(eval_moves)) ma:$(max_score - step_back)/$max_score")
+        println("$iteration. $selected_score ($selected_visits) ma:$(max_score - step_back)/$max_score")
       end
 
       if (eval_score > max_score)
@@ -216,26 +225,9 @@ function main()
         index = Dict(eval_points_hash => (build_move_policy(eval_moves), 0))
         index_keys = [eval_points_hash]
 
-        # t_moves, t_hash = eval_dna_and_hash_move_policy_uint64(build_move_policy(eval_moves))
-
-        # println("t_hash: $t_hash")
-
-
-        # for (key, value) in index
-        #   p_policy, p_visits = value
-        #   p_score = length(p_policy)
-        #   _, h = eval_dna_and_hash_move_policy_uint64(p_policy)
-        #   is_match = key == h
-        #   println("$p_score: $p_visits $is_match $key $h")
-        # end
-
-
-        # println(eval_points_hash)
-        # println(index)
-        # println(index_keys)
-
-        # readline()
-
+        step_back = 0
+        inactivity_counter = 0
+        inactivity_new_found_counter = 0
 
       else
         is_in_index = haskey(index, eval_points_hash)
