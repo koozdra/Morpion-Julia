@@ -102,7 +102,7 @@ function main()
   inactivity_counter = 0
   inactivity_counter_reset = 1000000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 100
+  inactivity_new_found_reset = 1
   step_back = 0
 
   debug_interval = 100000
@@ -202,8 +202,10 @@ function main()
       eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
 
       if (selected_visits ÷ eval_policy_score) % 2 == 1
-        eval_policy[rand(eval_policy_key_set)] = -100
-        eval_policy[rand(eval_policy_key_set)] = -100
+        for _ in rand(1:4)
+          eval_policy[rand(eval_policy_key_set)] = -100
+          eval_policy[rand(eval_policy_key_set)] = -100
+        end
       end
 
       # TODO: this should return the move policy so it doesn't have to be built later
@@ -332,3 +334,7 @@ function main()
 end
 
 main()
+
+# 170
+# Move[Move(9, 7, 9, 3, 4), Move(7, 9, 3, 9, 2), Move(3, 5, 3, 5, 4), Move(3, 4, 3, 1, 4), Move(6, 5, 6, 5, 4), Move(6, 4, 6, 1, 4), Move(7, 7, 5, 9, 1), Move(4, 6, 0, 6, 2), Move(5, 7, 3, 5, 3), Move(8, 7, 5, 7, 2), Move(5, 6, 4, 6, 2), Move(5, 3, 5, 3, 2), Move(7, 5, 5, 3, 3), Move(7, 8, 7, 5, 4), Move(10, 5, 6, 9, 1), Move(8, 5, 6, 5, 2), Move(8, 4, 8, 3, 4), Move(5, 1, 5, 1, 3), Move(7, 2, 6, 1, 3), Move(10, 2, 6, 6, 1), Move(5, 8, 5, 8, 1), Move(5, 5, 5, 5, 4), Move(4, 4, 3, 3, 3), Move(4, 3, 1, 3, 2), Move(5, 4, 4, 3, 3), Move(5, 2, 5, 1, 4), Move(7, 4, 5, 2, 3), Move(10, 4, 6, 4, 2), Move(7, 1, 7, 1, 4), Move(8, 2, 6, 0, 3), Move(9, 2, 6, 2, 2), Move(10, 1, 6, 5, 1), Move(9, 1, 5, 5, 1), Move(8, 1, 6, 1, 2), Move(4, 5, 4, 5, 1), Move(2, 5, 2, 5, 2), Move(1, 2, 1, 2, 3), Move(2, 4, 2, 4, 2), Move(8, 0, 4, 4, 1), Move(8, -1, 8, -1, 4), Move(2, 2, 2, 2, 4), Move(4, 2, 2, 2, 2), Move(4, 1, 4, 1, 4), Move(6, -1, 2, 3, 1), Move(7, -1, 3, 3, 1), Move(4, 7, 2, 5, 3), Move(4, 8, 4, 5, 4), Move(1, 5, 1, 5, 3), Move(2, 10, 2, 10, 1), Move(2, 8, 2, 8, 2), Move(1, 9, 1, 9, 1), Move(2, 1, 2, 1, 2), Move(2, 9, 2, 9, 1), Move(2, 7, 2, 6, 4), Move(1, 7, 1, 7, 2), Move(1, 8, 1, 5, 4), Move(0, 9, 0, 9, 1), Move(0, 8, 0, 8, 1), Move(0, 7, 0, 5, 4), Move(-1, 8, -1, 8, 1), Move(-2, 8, -2, 8, 2), Move(-1, 9, -1, 9, 2), Move(-1, 7, -1, 7, 1), Move(-2, 6, -2, 6, 3), Move(-1, 5, -2, 6, 1), Move(-2, 5, -2, 5, 2), Move(-2, 4, -2, 4, 3), Move(-2, 7, -2, 4, 4), Move(-1, 6, -1, 5, 4), Move(-3, 4, -3, 4, 3), Move(1, 4, -2, 7, 1), Move(1, 1, 1, 1, 4), Move(-1, 4, -2, 4, 2), Move(-3, 6, -3, 6, 1), Move(-4, 6, -4, 6, 2), Move(-3, 7, -3, 7, 2), Move(-5, 5, -5, 5, 3), Move(7, 0, 4, 3, 1), Move(9, 0, 5, 0, 2), Move(9, -1, 9, -1, 4), Move(5, -1, 5, -1, 2), Move(6, -2, 2, 2, 1), Move(5, -3, 5, -3, 3), Move(5, -2, 5, -3, 4), Move(4, -3, 4, -3, 3), Move(6, -3, 6, -3, 4), Move(7, -2, 6, -3, 3), Move(10, 3, 10, 1, 4), Move(5, 10, 1, 6, 3), Move(7, -3, 7, -3, 4), Move(4, -1, 2, 1, 1), Move(4, -2, 4, -3, 4), Move(3, -2, 3, -2, 2), Move(2, -3, 2, -3, 3), Move(3, -3, 2, -3, 2), Move(3, -1, 3, -3, 4), Move(2, -4, 2, -4, 3), Move(2, 0, 1, 1, 1), Move(1, -1, 1, -1, 3), Move(1, 0, 1, 0, 2), Move(0, -1, 0, -1, 3), Move(2, -1, 1, -1, 2), Move(0, 1, 0, 1, 1), Move(0, 2, 0, 1, 4), Move(-1, 1, -1, 1, 3), Move(-2, 1, -2, 1, 2), Move(-1, 2, -2, 1, 3), Move(-2, 2, -2, 2, 2), Move(-1, 3, -1, 1, 4), Move(-3, 1, -3, 1, 3), Move(2, -2, 2, -3, 4), Move(1, -3, 1, -3, 3), Move(1, -2, 1, -3, 4), Move(0, -3, 0, -3, 3), Move(0, 0, -1, 1, 1), Move(0, -2, 0, -3, 4), Move(-1, -2, -1, -2, 2), Move(-1, 0, -2, 1, 1), Move(-3, 5, -3, 5, 1), Move(-3, 3, -3, 3, 4), Move(-4, 4, -5, 5, 1), Move(-2, 3, -3, 3, 2), Move(-4, 5, -4, 5, 1), Move(-5, 4, -5, 4, 3), Move(-6, 5, -6, 5, 2), Move(-6, 4, -6, 4, 2), Move(-2, 0, -2, 0, 4), Move(-3, 0, -3, 0, 2), Move(-1, -1, -2, 0, 1), Move(-1, -3, -1, -3, 4), Move(-2, -3, -2, -3, 2), Move(-2, -2, -2, -2, 3), Move(-3, 2, -3, 2, 3), Move(-3, -1, -3, -1, 4), Move(-2, -1, -3, -1, 2), Move(-3, -2, -3, -2, 3), Move(-4, 1, -4, 1, 1), Move(-2, -4, -2, -4, 4), Move(-3, -5, -3, -5, 3), Move(-4, 3, -6, 5, 1), Move(-4, 2, -4, 2, 4), Move(-5, 3, -6, 4, 1), Move(-6, 2, -6, 2, 3), Move(-5, 2, -6, 2, 2), Move(-5, 1, -5, 1, 4), Move(-6, 0, -6, 0, 3), Move(-6, 1, -6, 1, 2), Move(-7, 0, -7, 0, 3), Move(-6, 3, -6, 1, 4), Move(-4, 0, -6, 2, 1), Move(-5, 0, -7, 0, 2), Move(-4, -1, -6, 1, 1), Move(-4, -2, -4, -2, 4), Move(-5, -2, -5, -2, 2), Move(-5, -3, -5, -3, 3), Move(-6, -3, -6, -3, 3), Move(-5, -1, -5, -3, 4), Move(-3, -3, -6, 0, 1), Move(-3, -4, -3, -5, 4), Move(-4, -3, -6, -3, 2), Move(-4, -5, -4, -5, 3), Move(-6, -1, -7, 0, 1), Move(-7, -1, -7, -1, 2), Move(-6, -2, -6, -3, 4), Move(-4, -4, -7, -1, 1), Move(-4, -6, -4, -6, 4), Move(-7, -3, -7, -3, 3), Move(-7, -2, -7, -2, 3), Move(-7, 3, -7, 3, 2), Move(-7, -4, -7, -4, 4)]
+
