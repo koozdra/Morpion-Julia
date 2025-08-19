@@ -102,7 +102,7 @@ function main()
   inactivity_counter = 0
   inactivity_counter_reset = 1000000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 1
+  inactivity_new_found_reset = 10
   step_back = 0
 
   debug_interval = 100000
@@ -142,7 +142,7 @@ function main()
 
     index[selected_key] = (move_policy, selected_visits + 1)
 
-    if !haskey(end_searched, selected_key) && selected_score > 100
+    if !haskey(end_searched, selected_key) && selected_score >= (max_score - step_back) && selected_score > 100
 
       es_start = time()
       result_index = end_search(collect(keys(move_policy)))
