@@ -102,7 +102,7 @@ function main()
   inactivity_counter = 0
   inactivity_counter_reset = 1000000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 10
+  inactivity_new_found_reset = 1000
   step_back = 0
 
   debug_interval = 100000
@@ -123,7 +123,7 @@ function main()
       p_policy, p_visits = index[key]
       p_score = length(p_policy)
 
-      key_score = p_score - (p_visits / 10000.0)
+      key_score = p_score - (p_visits / 1000.0)
 
       if key_score > max_key_score
         max_key = key
