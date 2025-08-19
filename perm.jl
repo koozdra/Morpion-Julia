@@ -125,7 +125,7 @@ function main()
 
       key_score =
         if p_score >= (max_score - step_back)
-          p_score - (p_visits / 100000.0)
+          p_score - (p_visits / 200000.0)
         else
           0
         end
