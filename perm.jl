@@ -123,7 +123,7 @@ function main()
       p_policy, p_visits = index[key]
       p_score = length(p_policy)
 
-      key_score = p_score - (p_visits / 1000000.0)
+      key_score = p_score - (p_visits / 10000.0)
 
       if key_score > max_key_score
         max_key = key
@@ -161,7 +161,7 @@ function main()
 
 
           if !haskey(index, f_key)
-            if (found_score >= max_score - step_back)
+            if (found_score >= max_score - step_back) || found_score >= selected_score
               index[f_key] = (build_move_policy(found_moves), 0)
               push!(index_keys, f_key)
 
