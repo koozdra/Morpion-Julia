@@ -123,7 +123,11 @@ function main()
       p_policy, p_visits = index[key]
       p_score = length(p_policy)
 
-      key_score = p_score - (p_visits / 1000.0)
+      key_score = if p_score >= max_score - step_back
+        p_score - (p_visits / 1000.0)
+      else
+        0
+      end
 
       if key_score > max_key_score
         max_key = key
