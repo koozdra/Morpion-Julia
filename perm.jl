@@ -204,13 +204,13 @@ function main()
       eval_policy_key_set = keys(eval_policy)
       eval_policy_score = length(eval_policy_key_set)
 
-      # eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
+      eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
 
-      # if (selected_visits ÷ eval_policy_score) % 2 == 1
-      for _ in rand(1:4)
-        eval_policy[rand(eval_policy_key_set)] = -100
+      if (selected_visits ÷ eval_policy_score) % 2 == 1
+        for _ in rand(1:4)
+          eval_policy[rand(eval_policy_key_set)] = -100
+        end
       end
-      # end
 
       # TODO: this should return the move policy so it doesn't have to be built later
       eval_moves, eval_points_hash = eval_dna_and_hash_move_policy_uint64(eval_policy)
