@@ -252,9 +252,8 @@ function main()
 
             if eval_score > (max_score - step_back)
               inactivity_new_found_counter += 1
+              inactivity_counter = 0
             end
-
-            inactivity_counter = 0
 
             index[eval_points_hash] = (build_move_policy(eval_moves), 0)
             push!(index_keys, eval_points_hash)
