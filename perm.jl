@@ -122,7 +122,8 @@ function main()
 
     # focus = focus_min + (focus_max - focus_min) * ((iteration % focus_interval) / focus_interval)
     focus =
-      if (iteration ÷ focus_interval) % 2 == 0
+    # if (iteration ÷ focus_interval) % 2 == 0
+      if iteration % 2 == 0
         focus_min
       else
         focus_max
@@ -230,7 +231,7 @@ function main()
 
       # # trace
       if iteration % 10000 == 0
-        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score f:$focus")
+        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys))")
       end
 
       if (eval_score > max_score)
