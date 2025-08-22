@@ -318,19 +318,19 @@ function main()
       a = length(index_keys)
       b = length(index)
 
-      # filter!(function (k)
-      #     p, p_moves, p_visits = index[k]
-      #     p_score = length(p_moves)
-      #     should_keep = p_score >= (max_score - step_back)
+      filter!(function (k)
+          p, p_moves, p_visits = index[k]
+          p_score = length(p_moves)
+          should_keep = p_score >= (max_score - step_back)
 
-      #     if !should_keep
-      #       delete!(index, k)
-      #       delete!(end_searched, k)
-      #       # println("- $p_score")
-      #     end
+          if !should_keep
+            delete!(index, k)
+            delete!(end_searched, k)
+            # println("- $p_score")
+          end
 
-      #     should_keep
-      #   end, index_keys)
+          should_keep
+        end, index_keys)
 
       # println(" --- index: $b -> $(length(index)) ->  keys: $a -> $(length(index_keys))")
 
