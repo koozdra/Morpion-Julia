@@ -114,7 +114,7 @@ function main()
   end_searched = Dict{UInt64,Bool}()
 
   focus_min = 100
-  focus_max = 10000000
+  focus_max = 1000000
   focus_interval = 1000000
   focus = focus_min
 
@@ -318,24 +318,23 @@ function main()
       inactivity_new_found_counter = 0
       inactivity_counter = 0
 
-      a = length(index_keys)
-      b = length(index)
+      # a = length(index_keys)
+      # b = length(index)
+      # filter!(function (k)
+      #     p_policy, p_visits = index[k]
+      #     p_score = length(p_policy)
+      #     should_keep = p_score >= (max_score - step_back)
 
-      filter!(function (k)
-          p_policy, p_visits = index[k]
-          p_score = length(p_policy)
-          should_keep = p_score >= (max_score - step_back)
+      #     if !should_keep
+      #       delete!(index, k)
+      #       delete!(end_searched, k)
+      #       # println("- $p_score")
+      #     end
 
-          if !should_keep
-            delete!(index, k)
-            delete!(end_searched, k)
-            # println("- $p_score")
-          end
+      #     should_keep
+      #   end, index_keys)
 
-          should_keep
-        end, index_keys)
-
-      println(" --- index: $b -> $(length(index)) ->  keys: $a -> $(length(index_keys))")
+      # println(" --- index: $b -> $(length(index)) ->  keys: $a -> $(length(index_keys))")
 
     end
 
