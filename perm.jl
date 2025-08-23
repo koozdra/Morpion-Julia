@@ -102,7 +102,7 @@ function main()
   inactivity_counter = 0
   inactivity_counter_reset = 1000000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 30
+  inactivity_new_found_reset = 10
   step_back = 0
 
   debug_interval = 100000
@@ -114,7 +114,7 @@ function main()
   end_searched = Dict{UInt64,Bool}()
 
   focus_min = 100
-  focus_max = 1000000
+  focus_max = 10000000
   focus_interval = 1000000
   focus = focus_min
 
@@ -230,7 +230,7 @@ function main()
       eval_score = length(eval_moves)
 
       # # trace
-      if iteration % 10000 == 0
+      if iteration % 10001 == 0
         println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys))")
       end
 
