@@ -100,7 +100,7 @@ function main()
   iteration = 0
 
   inactivity_counter = 0
-  inactivity_counter_reset = 500000
+  inactivity_counter_reset = 300000
   inactivity_new_found_counter = 0
   inactivity_new_found_reset = 10
   step_back = 0
@@ -231,7 +231,8 @@ function main()
 
       # # trace
       if iteration % 10001 == 0
-        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys))")
+        inactivity_pct = round(100 * inactivity_counter / inactivity_counter_reset)
+        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) $(lpad(inactivity_pct, 2, '0'))%")
       end
 
       if (eval_score > max_score)
