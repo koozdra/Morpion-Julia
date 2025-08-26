@@ -100,7 +100,7 @@ function main()
   iteration = 0
 
   inactivity_counter = 0
-  inactivity_counter_reset = 300000
+  inactivity_counter_reset = 500000
   inactivity_new_found_counter = 0
   inactivity_new_found_reset = 50
   step_back = 0
