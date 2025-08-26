@@ -199,7 +199,7 @@ function main()
                 index_keys = [f_key]
 
                 step_back = 0
-                inactivity_counter = 0
+                inactivity_counter = max(0, inactivity_counter - (inactivity_counter / 10))
                 inactivity_new_found_counter = 0
               end
             end
@@ -246,7 +246,7 @@ function main()
         index_keys = [eval_points_hash]
 
         step_back = 0
-        inactivity_counter = 0
+        inactivity_counter = max(0, inactivity_counter - (inactivity_counter / 10))
         inactivity_new_found_counter = 0
 
       else
@@ -269,7 +269,7 @@ function main()
 
             end
 
-            inactivity_counter = 0
+            inactivity_counter = max(0, inactivity_counter - (inactivity_counter / 10))
 
             index[eval_points_hash] = (build_move_policy(eval_moves), 0)
             push!(index_keys, eval_points_hash)
