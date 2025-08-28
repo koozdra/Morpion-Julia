@@ -261,8 +261,9 @@ function main()
 
             if eval_score >= selected_score
               p_policy, p_visits = index[selected_key]
-              index[selected_key] = (p_policy, 0)
             end
+
+            index[selected_key] = (p_policy, 0)
 
             if eval_score > (max_score - step_back)
               inactivity_new_found_counter += 1
