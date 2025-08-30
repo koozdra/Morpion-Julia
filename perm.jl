@@ -120,9 +120,8 @@ function main()
 
   while true
 
-    # focus = focus_min + (focus_max - focus_min) * ((iteration % focus_interval) / focus_interval)
+
     focus =
-    # if (iteration ÷ focus_interval) % 2 == 0
       if iteration % 2 == 0
         focus_min
       else
@@ -137,10 +136,14 @@ function main()
       p_score = length(p_policy)
 
       key_score =
-        if p_score >= (max_score - step_back)
-          p_score - (p_visits / focus)
+        if focus == focus_max
+          if p_score >= (max_score - step_back)
+            p_score - (p_visits / focus)
+          else
+            0
+          end
         else
-          0
+          -p_visits
         end
 
       if key_score > max_key_score
@@ -216,6 +219,9 @@ function main()
       eval_policy = copy(move_policy)
       eval_policy_key_set = keys(eval_policy)
       eval_policy_score = length(eval_policy_key_set)
+
+      # TODO: don't wait till selected visits to start random
+      # make this more modular
 
       eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
 
