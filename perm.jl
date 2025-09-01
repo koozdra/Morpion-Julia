@@ -100,7 +100,7 @@ function main()
   iteration = 0
 
   inactivity_counter = 0
-  inactivity_counter_reset = 2000000
+  inactivity_counter_reset = 500000
   inactivity_new_found_counter = 0
   inactivity_new_found_reset = 300
   step_back = 0
@@ -313,6 +313,10 @@ function main()
       println("$max_score")
       println("$max_moves")
       println()
+    end
+
+    if iteration > 0 && iteration % 10000000 == 0
+      inactivity_counter_reset = 0
     end
 
     if inactivity_counter >= inactivity_counter_reset
