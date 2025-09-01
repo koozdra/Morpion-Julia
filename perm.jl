@@ -175,7 +175,7 @@ function main()
           if !should_keep
             delete!(index, k)
             delete!(end_searched, k)
-            println("- $p_score")
+            # println("- $p_score")
             backup[k] = (p_policy, 0)
           end
 
