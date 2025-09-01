@@ -102,8 +102,10 @@ function main()
   inactivity_counter = 0
   inactivity_counter_reset = 500000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 50
+  inactivity_new_found_reset = 1
   step_back = 0
+
+  backup_back = 5
 
   debug_interval = 100000
 
@@ -226,7 +228,7 @@ function main()
                 inactivity_counter = 0
                 inactivity_new_found_counter = 0
               end
-            elseif (found_score >= max_score - step_back - 2) && !haskey(backup, f_key)
+            elseif (found_score >= max_score - step_back - backup_back) && !haskey(backup, f_key)
               backup[f_key] = (build_move_policy(found_moves), 0)
             end
           end
@@ -261,7 +263,7 @@ function main()
       # # trace
       if iteration % 10001 == 0
         inactivity_pct = round(100 * inactivity_counter / inactivity_counter_reset)
-        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) b:$(length(backup)) $(lpad(inactivity_pct, 2, '0'))%")
+        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) $(lpad(inactivity_pct, 2, '0'))%")
       end
 
       if (eval_score > max_score)
@@ -305,7 +307,7 @@ function main()
 
             index[eval_points_hash] = (build_move_policy(eval_moves), 0)
             push!(index_keys, eval_points_hash)
-          elseif eval_score >= (max_score - step_back) - 2 && !haskey(backup, eval_points_hash)
+          elseif eval_score >= (max_score - step_back - backup_back) && !haskey(backup, eval_points_hash)
             backup[eval_points_hash] = (build_move_policy(eval_moves), 0)
             # println("$iteration.  $selected_score ($selected_visits) -> $eval_score")
           end
@@ -387,6 +389,16 @@ function main()
 
       # println(" --- index: $b -> $(length(index)) ->  keys: $a -> $(length(index_keys))")
 
+    end
+
+    if length(backup) > 10000
+      kvs = collect(backup)                         # Vector of Pair(key => (array, int))
+      sort!(kvs, by=kv -> length(last(kv)[1]))    # sort by length of the array in the tuple
+      k = fld(length(kvs), 2)                       # number to drop (lower half)
+      for kv in kvs[1:k]
+        delete!(backup, first(kv))                # remove those keys
+      end
+      println("cleaning backup: $(length(backup))")
     end
 
     # if selected_visits > 1000000 && length(index_keys) > 10
