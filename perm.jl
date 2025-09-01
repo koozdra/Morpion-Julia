@@ -350,7 +350,7 @@ function main()
       inactivity_new_found_counter = 0
       inactivity_counter = 0
 
-      empty!(end_searched)
+      # empty!(end_searched)
 
       println("---------------------------------------------------")
     end
@@ -366,7 +366,7 @@ function main()
         if b_score >= max_score - step_back && !haskey(index, b_key)
           push!(index_keys, b_key)
           index[b_key] = (b_policy, 0)
-          println(" + $b_score")
+          # println(" + $b_score")
         end
       end
     end
