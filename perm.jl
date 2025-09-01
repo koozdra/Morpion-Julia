@@ -176,7 +176,7 @@ function main()
 
           if !should_keep
             delete!(index, k)
-            delete!(end_searched, k)
+            # delete!(end_searched, k)
             # println("- $p_score")
             backup[k] = (p_policy, 0)
           end
@@ -347,6 +347,11 @@ function main()
 
     if iteration > 0 && iteration % 10000000 == 0
       step_back = 0
+      inactivity_new_found_counter = 0
+      inactivity_counter = 0
+
+      empty!(end_searched)
+
       println("---------------------------------------------------")
     end
 
