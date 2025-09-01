@@ -316,7 +316,8 @@ function main()
     end
 
     if iteration > 0 && iteration % 10000000 == 0
-      inactivity_counter_reset = 0
+      step_back = 0
+      println("---------------------------------------------------")
     end
 
     if inactivity_counter >= inactivity_counter_reset
