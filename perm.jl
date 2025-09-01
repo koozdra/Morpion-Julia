@@ -111,6 +111,8 @@ function main()
   index = Dict(perm_moves_hash => (build_move_policy(perm_moves), 0))
   index_keys = [perm_moves_hash]
 
+  backup = Dict(perm_moves_hash => (build_move_policy(perm_moves), 0))
+
   end_searched = Dict{UInt64,Bool}()
 
   focus_min = 100
@@ -163,7 +165,24 @@ function main()
 
     index[selected_key] = (move_policy, selected_visits + 1)
 
-    if !haskey(end_searched, selected_key) && selected_score >= (max_score - step_back) && selected_score > 100
+    if selected_score < (max_score - step_back)
+      # println(" - $selected_score")
+      filter!(function (k)
+          p_policy, p_visits = index[k]
+          p_score = length(p_policy)
+          should_keep = k != selected_key
+
+          if !should_keep
+            delete!(index, k)
+            delete!(end_searched, k)
+            println("- $p_score")
+            backup[k] = (p_policy, 0)
+          end
+
+          should_keep
+        end, index_keys)
+
+    elseif !haskey(end_searched, selected_key) && selected_score >= (max_score - step_back) && selected_score > 100
 
       es_start = time()
       result_index = end_search(collect(keys(move_policy)))
@@ -182,7 +201,7 @@ function main()
 
 
           if !haskey(index, f_key)
-            if (found_score >= max_score - step_back) || found_score >= selected_score
+            if (found_score >= max_score - step_back)
               index[f_key] = (build_move_policy(found_moves), 0)
               push!(index_keys, f_key)
 
@@ -198,13 +217,17 @@ function main()
 
                 println("$iteration. ******** $max_score")
 
-                index = Dict(f_key => (build_move_policy(found_moves), 0))
-                index_keys = [f_key]
+                # index = Dict(f_key => (build_move_policy(found_moves), 0))
+                # index_keys = [f_key]
+                # index[eval_points_hash] = (build_move_policy(eval_moves), 0)
+                # push!(index_keys, eval_points_hash)
 
                 step_back = 0
                 inactivity_counter = 0
                 inactivity_new_found_counter = 0
               end
+            elseif (found_score >= max_score - step_back - 2) && !haskey(backup, f_key)
+              backup[f_key] = (build_move_policy(found_moves), 0)
             end
           end
         end
@@ -238,7 +261,7 @@ function main()
       # # trace
       if iteration % 10001 == 0
         inactivity_pct = round(100 * inactivity_counter / inactivity_counter_reset)
-        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) $(lpad(inactivity_pct, 2, '0'))%")
+        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) b:$(length(backup)) $(lpad(inactivity_pct, 2, '0'))%")
       end
 
       if (eval_score > max_score)
@@ -248,11 +271,13 @@ function main()
         println("$iteration. ******** $max_score")
         println("$iteration. $selected_score ($selected_visits) -> $eval_score")
 
-        index = Dict(eval_points_hash => (build_move_policy(eval_moves), 0))
-        index_keys = [eval_points_hash]
+        # index = Dict(eval_points_hash => (build_move_policy(eval_moves), 0))
+        # index_keys = [eval_points_hash]
+        index[eval_points_hash] = (build_move_policy(eval_moves), 0)
+        push!(index_keys, eval_points_hash)
 
         step_back = 0
-        # inactivity_counter = max(0, inactivity_counter - (inactivity_counter_reset / 100))
+        inactivity_counter = 0
         inactivity_new_found_counter = 0
 
       else
@@ -280,6 +305,9 @@ function main()
 
             index[eval_points_hash] = (build_move_policy(eval_moves), 0)
             push!(index_keys, eval_points_hash)
+          elseif eval_score >= (max_score - step_back) - 2 && !haskey(backup, eval_points_hash)
+            backup[eval_points_hash] = (build_move_policy(eval_moves), 0)
+            # println("$iteration.  $selected_score ($selected_visits) -> $eval_score")
           end
         else
           p_policy, p_visits = index[eval_points_hash]
@@ -324,6 +352,16 @@ function main()
       # if selected_score > 10000
       step_back += 1
       inactivity_counter = 0
+
+      for (b_key, b_value) in collect(pairs(backup))
+        b_policy, b_visits = b_value
+        b_score = length(b_policy)
+        if b_score >= max_score - step_back && !haskey(index, b_key)
+          push!(index_keys, b_key)
+          index[b_key] = (b_policy, 0)
+          println(" + $b_score")
+        end
+      end
     end
 
     if inactivity_new_found_counter >= inactivity_new_found_reset
