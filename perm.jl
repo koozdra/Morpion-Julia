@@ -105,7 +105,7 @@ function main()
   inactivity_new_found_reset = 1
   step_back = 0
 
-  backup_back = 5
+  backup_back = 1
 
   debug_interval = 100000
 
@@ -396,7 +396,7 @@ function main()
 
     end
 
-    if length(backup) > 10000
+    if length(backup) > 50000
       kvs = collect(backup)                         # Vector of Pair(key => (array, int))
       sort!(kvs, by=kv -> length(last(kv)[1]))    # sort by length of the array in the tuple
       k = fld(length(kvs), 2)                       # number to drop (lower half)
