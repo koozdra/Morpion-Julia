@@ -345,15 +345,15 @@ function main()
       println()
     end
 
-    if iteration > 0 && iteration % 10000000 == 0
-      step_back = 0
-      inactivity_new_found_counter = 0
-      inactivity_counter = 0
+    # if iteration > 0 && iteration % 10000000 == 0
+    #   step_back = 0
+    #   inactivity_new_found_counter = 0
+    #   inactivity_counter = 0
 
-      # empty!(end_searched)
+    #   # empty!(end_searched)
 
-      println("---------------------------------------------------")
-    end
+    #   println("---------------------------------------------------")
+    # end
 
     if inactivity_counter >= inactivity_counter_reset
       # if selected_score > 10000
