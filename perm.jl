@@ -369,7 +369,7 @@ function main()
 
     if inactivity_counter >= inactivity_counter_reset
       # if selected_score > 10000
-      step_back += 1
+      step_back += 3
       inactivity_counter = 0
 
       for (b_key, b_value) in collect(pairs(backup))
