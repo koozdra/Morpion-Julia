@@ -121,7 +121,7 @@ function main()
   taboo_visits = 1000000
 
   focus_min = 100
-  focus_max = 1000000
+  focus_max = 300000
   focus_interval = 1000000
   focus = focus_min
 
@@ -145,7 +145,7 @@ function main()
 
       key_score =
         if focus == focus_max
-          if p_score >= (max_score - step_back) && !is_in_taboo
+          if p_score >= (max_score - step_back) && p_visits < taboo_visits
             p_score - (p_visits / focus)
           else
             0
@@ -352,10 +352,10 @@ function main()
       println()
     end
 
-    if selected_visits > taboo_visits && !haskey(taboo, selected_key)
-      taboo[selected_key] = true
-      println("$iteration. - $selected_score")
-    end
+    # if selected_visits > taboo_visits && !haskey(taboo, selected_key)
+    #   taboo[selected_key] = true
+    #   println("$iteration. - $selected_score")
+    # end
 
     # if iteration > 0 && iteration % 10000000 == 0
     #   step_back = 0
