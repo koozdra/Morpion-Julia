@@ -102,7 +102,7 @@ function main()
   inactivity_counter = 0
   inactivity_counter_reset = 1000000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 10
+  inactivity_new_found_reset = 1
   step_back = 0
 
   backup_back = 1
@@ -118,7 +118,7 @@ function main()
   end_searched = Dict{UInt64,Bool}()
   taboo = Dict{UInt64,Bool}()
 
-  taboo_visits = 1000000
+  taboo_visits = 2000000
 
   focus_min = 100
   focus_max = 300000
