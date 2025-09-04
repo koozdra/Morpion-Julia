@@ -116,6 +116,9 @@ function main()
   backup = Dict(perm_moves_hash => (build_move_policy(perm_moves), 0))
 
   end_searched = Dict{UInt64,Bool}()
+  taboo = Dict{UInt64,Bool}()
+
+  taboo_visits = 1000000
 
   focus_min = 100
   focus_max = 1000000
@@ -138,10 +141,11 @@ function main()
       # for key in index_keys
       p_policy, p_visits = index[key]
       p_score = length(p_policy)
+      is_in_taboo = haskey(taboo, key)
 
       key_score =
         if focus == focus_max
-          if p_score >= (max_score - step_back)
+          if p_score >= (max_score - step_back) && !is_in_taboo
             p_score - (p_visits / focus)
           else
             0
@@ -285,6 +289,7 @@ function main()
 
       else
         is_in_index = haskey(index, eval_points_hash)
+        is_in_taboo = haskey(taboo, eval_points_hash)
 
 
         if !is_in_index
@@ -345,6 +350,11 @@ function main()
       println("$max_score")
       println("$max_moves")
       println()
+    end
+
+    if selected_visits > taboo_visits && !haskey(taboo, selected_key)
+      taboo[selected_key] = true
+      println("$iteration. - $selected_score")
     end
 
     # if iteration > 0 && iteration % 10000000 == 0
