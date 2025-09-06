@@ -100,7 +100,7 @@ function main()
   iteration = 0
 
   inactivity_counter = 0
-  inactivity_counter_reset = 1000000
+  inactivity_counter_reset = 2000000
   inactivity_new_found_counter = 0
   inactivity_new_found_reset = 100
   step_back = 0
@@ -118,7 +118,7 @@ function main()
   end_searched = Dict{UInt64,Bool}()
   taboo = Dict{UInt64,Bool}()
 
-  taboo_visits = 2000000
+  taboo_visits = 1000000
 
   focus_min = 100
   focus_max = 1000000
@@ -212,8 +212,7 @@ function main()
               push!(index_keys, f_key)
 
               println("$iteration.  es $selected_score > $found_score")
-              # inactivity_counter = 0
-              inactivity_counter = max(0, inactivity_counter - (inactivity_counter_reset / 100))
+              inactivity_counter = 0
 
               if found_score > max_score - step_back
                 inactivity_new_found_counter += 1
@@ -298,7 +297,7 @@ function main()
           if eval_score >= (max_score - step_back)
 
             println("$iteration. $selected_score ($selected_visits) -> $eval_score")
-            # inactivity_counter = 0
+            inactivity_counter = 0
 
             if eval_score >= selected_score
               p_policy, p_visits = index[selected_key]
@@ -311,7 +310,7 @@ function main()
 
             end
 
-            inactivity_counter = max(0, inactivity_counter - (inactivity_counter_reset / 100))
+            # inactivity_counter = max(0, inactivity_counter - (inactivity_counter_reset / 100))
 
             index[eval_points_hash] = (build_move_policy(eval_moves), 0)
             push!(index_keys, eval_points_hash)
