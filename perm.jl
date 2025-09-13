@@ -118,7 +118,7 @@ function main()
   end_searched = Dict{UInt64,Bool}()
   taboo = Dict{UInt64,Bool}()
 
-  taboo_visits = 1000000
+  # taboo_visits = 1000000
 
   focus_min = 100
   focus_max = 1000000
@@ -129,7 +129,7 @@ function main()
 
 
     focus =
-      if iteration % 2 == 0
+      if iteration % 10 == 0
         focus_min
       else
         focus_max
@@ -145,7 +145,7 @@ function main()
 
       key_score =
         if focus == focus_max
-          if p_score >= (max_score - step_back) && p_visits < taboo_visits
+          if p_score >= (max_score - step_back) #&& p_visits < taboo_visits
             p_score - (p_visits / focus)
           else
             0
