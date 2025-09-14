@@ -125,11 +125,15 @@ function main()
   focus_interval = 1000000
   focus = focus_min
 
+  focus_balance_distance = 10000000
+
   while true
 
 
+    focus_balance = 50 * (1 + sin(2π * iteration / focus_balance_distance))
+
     focus =
-      if iteration % 10 == 0
+      if iteration % 100 <= focus_balance
         focus_min
       else
         focus_max
@@ -265,10 +269,10 @@ function main()
       eval_moves, eval_points_hash = eval_dna_and_hash_move_policy_uint64(eval_policy)
       eval_score = length(eval_moves)
 
-      # # trace
+      # trace
       if iteration % 10001 == 0
         inactivity_pct = round(100 * inactivity_counter / inactivity_counter_reset)
-        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) $(lpad(inactivity_pct, 2, '0'))%")
+        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) $(floor(inactivity_pct))% $(floor(focus_balance))")
       end
 
       if (eval_score > max_score)
