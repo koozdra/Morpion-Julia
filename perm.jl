@@ -125,7 +125,7 @@ function main()
   focus_interval = 1000000
   focus = focus_min
 
-  focus_balance_distance = 1000000
+  focus_balance_distance = 10000000
 
   while true
 
