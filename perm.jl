@@ -149,8 +149,8 @@ function main()
 
       key_score =
         if focus == focus_max
-          if p_score >= (max_score - step_back) && p_visits < taboo_visits
-            p_score - (p_visits / focus)
+          if p_visits < taboo_visits
+            p_score
           else
             0
           end
