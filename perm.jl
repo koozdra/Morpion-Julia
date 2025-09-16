@@ -125,7 +125,7 @@ function main()
   focus_interval = 1000000
   focus = focus_min
 
-  focus_balance_distance = 10000000
+  focus_balance_distance = 1000000
 
   while true
 
@@ -135,6 +135,21 @@ function main()
     if iteration % focus_balance_distance == 0
       println("$iteration. refocussing...")
       step_back = 0
+
+      filter!(function (k)
+          p_policy, p_visits = index[k]
+          p_score = length(p_policy)
+          should_keep = p_score >= max_score - step_back
+
+          if !should_keep
+            delete!(index, k)
+            # delete!(end_searched, k)
+            # println("- $p_score")
+            backup[k] = (p_policy, 0)
+          end
+
+          should_keep
+        end, index_keys)
     end
 
     focus =
