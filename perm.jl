@@ -102,7 +102,7 @@ function main()
   inactivity_counter = 0
   inactivity_counter_reset = 100000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 1000
+  inactivity_new_found_reset = 1
   step_back = 0
 
   backup_back = 1
