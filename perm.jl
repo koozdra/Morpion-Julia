@@ -130,7 +130,7 @@ function main()
   while true
 
 
-    focus_balance = 50 * (1 + sin(2π * iteration / focus_balance_distance))
+    # focus_balance = 50 * (1 + sin(2π * iteration / focus_balance_distance))
 
     if iteration % 5000000 == 0
       println("$iteration. refocussing...")
@@ -153,7 +153,8 @@ function main()
     end
 
     focus =
-      if iteration % 100 <= focus_balance
+    # if iteration % 100 <= focus_balance
+      if iteration % 2 == 0
         focus_min
       else
         focus_max
@@ -292,7 +293,7 @@ function main()
       # trace
       if iteration % 10001 == 0
         inactivity_pct = round(100 * inactivity_counter / inactivity_counter_reset)
-        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) $(floor(inactivity_pct))% $(floor(focus_balance))")
+        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) $(floor(inactivity_pct))%")
       end
 
       if (eval_score > max_score)
