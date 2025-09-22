@@ -100,7 +100,7 @@ function main()
   iteration = 0
 
   inactivity_counter = 0
-  inactivity_counter_reset = 300000
+  inactivity_counter_reset = 500000
   inactivity_new_found_counter = 0
   inactivity_new_found_reset = 10
   step_back = 0
@@ -132,7 +132,7 @@ function main()
 
     # focus_balance = 50 * (1 + sin(2π * iteration / focus_balance_distance))
 
-    if iteration % 5000000 == 0
+    if iteration % 10000000 == 0
       println("$iteration. refocussing...")
       step_back = 0
 
