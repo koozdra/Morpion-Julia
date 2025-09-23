@@ -132,7 +132,7 @@ function main()
 
     # focus_balance = 50 * (1 + sin(2π * iteration / focus_balance_distance))
 
-    if iteration % 20000000 == 0
+    if iteration % 50000000 == 0
       println("$iteration. refocussing...")
       step_back = 0
 
