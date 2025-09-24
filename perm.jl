@@ -100,9 +100,9 @@ function main()
   iteration = 0
 
   inactivity_counter = 0
-  inactivity_counter_reset = 1000000
+  inactivity_counter_reset = 10000000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 1000
+  inactivity_new_found_reset = 10
   step_back = 0
 
   backup_back = 1
@@ -132,29 +132,29 @@ function main()
 
     # focus_balance = 50 * (1 + sin(2π * iteration / focus_balance_distance))
 
-    if iteration % 50000000 == 0
-      println("$iteration. refocussing...")
-      step_back = 0
+    # if iteration % 50000000 == 0
+    #   println("$iteration. refocussing...")
+    #   step_back = 0
 
-      filter!(function (k)
-          p_policy, p_visits = index[k]
-          p_score = length(p_policy)
-          should_keep = p_score >= max_score - step_back
+    #   filter!(function (k)
+    #       p_policy, p_visits = index[k]
+    #       p_score = length(p_policy)
+    #       should_keep = p_score >= max_score - step_back
 
-          if !should_keep
-            delete!(index, k)
-            # delete!(end_searched, k)
-            # println("- $p_score")
-            backup[k] = (p_policy, 0)
-          end
+    #       if !should_keep
+    #         delete!(index, k)
+    #         # delete!(end_searched, k)
+    #         # println("- $p_score")
+    #         backup[k] = (p_policy, 0)
+    #       end
 
-          should_keep
-        end, index_keys)
-    end
+    #       should_keep
+    #     end, index_keys)
+    # end
 
     focus =
     # if iteration % 100 <= focus_balance
-      if iteration % 2 == 0
+      if iteration % 10 == 0
         focus_min
       else
         focus_max
