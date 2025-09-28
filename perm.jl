@@ -232,12 +232,15 @@ function main()
 
 
           if !haskey(index, f_key)
+
             if (found_score >= max_score - step_back)
               index[f_key] = (build_move_policy(found_moves), 0)
               push!(index_keys, f_key)
 
               println("$iteration.  es $selected_score > $found_score")
-              inactivity_counter = max(0, inactivity_counter - floor(inactivity_counter_reset / 100))
+              if (found_score > max_score - step_back)
+                inactivity_counter = max(0, inactivity_counter - floor(inactivity_counter_reset / 100))
+              end
 
               if found_score > max_score - step_back
                 inactivity_new_found_counter += 1
@@ -322,8 +325,9 @@ function main()
           if eval_score >= (max_score - step_back)
 
             println("$iteration. $selected_score ($selected_visits) -> $eval_score")
-
-            inactivity_counter = max(0, inactivity_counter - floor(inactivity_counter_reset / 100))
+            if eval_score > (max_score - step_back)
+              inactivity_counter = max(0, inactivity_counter - floor(inactivity_counter_reset / 100))
+            end
 
             if eval_score >= selected_score
               p_policy, p_visits = index[selected_key]
