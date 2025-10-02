@@ -157,7 +157,7 @@ function main()
 
     focus =
     # if iteration % 100 <= focus_balance
-      if iteration % 10 == 0
+      if iteration % 2 == 0
         focus_min
       else
         focus_max
