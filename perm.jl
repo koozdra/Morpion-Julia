@@ -118,6 +118,9 @@ function main()
   end_searched = Dict{UInt64,Bool}()
   taboo = Dict{UInt64,Bool}()
 
+  end_search_debounce = 1000
+  last_end_search_iteration = 0
+
   taboo_visits = 1000000
 
   focus_min = 100
@@ -213,7 +216,10 @@ function main()
           should_keep
         end, index_keys)
 
-    elseif !haskey(end_searched, selected_key) && selected_score >= (max_score - step_back) && selected_score > 100
+    elseif !haskey(end_searched, selected_key) &&
+           selected_score >= (max_score - step_back) &&
+           selected_score > 100 &&
+           iteration > last_end_search_iteration + end_search_debounce
 
       es_start = time()
       result_index = end_search(collect(keys(move_policy)))
@@ -271,6 +277,7 @@ function main()
       println("$iteration. ES $selected_score f:$(length(result_index)) n:$(new_found_count) $(round(es_end - es_start, digits=2))")
 
       end_searched[selected_key] = true
+      last_end_search_iteration = iteration
     else
 
       # TODO: do something about this copy
