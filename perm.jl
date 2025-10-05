@@ -288,12 +288,12 @@ function main()
       # TODO: don't wait till selected visits to start random
       # make this more modular
 
-      eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
-
       if (selected_visits ÷ eval_policy_score) % 2 == 0
         for _ in rand(2:4)
           eval_policy[rand(eval_policy_key_set)] = -100
         end
+      else
+        eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
       end
 
       # TODO: this should return the move policy so it doesn't have to be built later
