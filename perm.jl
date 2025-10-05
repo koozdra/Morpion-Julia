@@ -288,12 +288,12 @@ function main()
       # TODO: don't wait till selected visits to start random
       # make this more modular
 
+      eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
+
       if (selected_visits ÷ eval_policy_score) % 2 == 0
         for _ in rand(2:4)
           eval_policy[rand(eval_policy_key_set)] = -100
         end
-      else
-        eval_policy[collect(eval_policy_key_set)[selected_visits%eval_policy_score+1]] = -100
       end
 
       # TODO: this should return the move policy so it doesn't have to be built later
@@ -302,7 +302,32 @@ function main()
 
       # trace
       if iteration % 10001 == 0
-        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys))")
+        min_visited = 9999999999
+
+        for (key, value) in index
+          p_policy, p_visits = value
+          p_score = length(p_policy)
+          if (p_score >= max_score - step_back)
+            min_visited = min(min_visited, p_visits)
+          end
+        end
+
+        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) m:$min_visited")
+
+        if min_visited > focus_min
+          step_back += 1
+
+
+          for (b_key, b_value) in collect(pairs(backup))
+            b_policy, b_visits = b_value
+            b_score = length(b_policy)
+            if b_score >= max_score - step_back && !haskey(index, b_key)
+              push!(index_keys, b_key)
+              index[b_key] = (b_policy, 0)
+              # println(" + $b_score")
+            end
+          end
+        end
       end
 
       if (eval_score > max_score)
@@ -364,35 +389,35 @@ function main()
 
 
     if iteration > 0 && iteration % debug_interval == 0
-      min_visited = 9999999999
+      # min_visited = 9999999999
 
-      for (key, value) in index
-        p_policy, p_visits = value
-        p_score = length(p_policy)
-        if (p_score >= max_score - step_back)
-          min_visited = min(min_visited, p_visits)
-        end
-      end
+      # for (key, value) in index
+      #   p_policy, p_visits = value
+      #   p_score = length(p_policy)
+      #   if (p_score >= max_score - step_back)
+      #     min_visited = min(min_visited, p_visits)
+      #   end
+      # end
 
       current_time = time()
       elapsed = current_time - last_debug_time
-      println("$iteration. $max_score ($(max_score - step_back) $inactivity_new_found_counter/$inactivity_new_found_reset $(length(index_keys)) $(round(elapsed, digits=2))s m:$min_visited)")
+      println("$iteration. $max_score ($(max_score - step_back) $inactivity_new_found_counter/$inactivity_new_found_reset $(length(index_keys)) $(round(elapsed, digits=2))s)")
       last_debug_time = current_time
 
-      if min_visited > focus_min
-        step_back += 1
+      # if min_visited > focus_min
+      #   step_back += 1
 
 
-        for (b_key, b_value) in collect(pairs(backup))
-          b_policy, b_visits = b_value
-          b_score = length(b_policy)
-          if b_score >= max_score - step_back && !haskey(index, b_key)
-            push!(index_keys, b_key)
-            index[b_key] = (b_policy, 0)
-            # println(" + $b_score")
-          end
-        end
-      end
+      #   for (b_key, b_value) in collect(pairs(backup))
+      #     b_policy, b_visits = b_value
+      #     b_score = length(b_policy)
+      #     if b_score >= max_score - step_back && !haskey(index, b_key)
+      #       push!(index_keys, b_key)
+      #       index[b_key] = (b_policy, 0)
+      #       # println(" + $b_score")
+      #     end
+      #   end
+      # end
 
 
 
