@@ -123,7 +123,7 @@ function main()
 
   taboo_visits = 1000000
 
-  focus_min = 100
+  focus_min = 1000
   focus_max = 1000000
   focus_interval = 1000000
   focus = focus_min
@@ -379,7 +379,7 @@ function main()
       println("$iteration. $max_score ($(max_score - step_back) $inactivity_new_found_counter/$inactivity_new_found_reset $(length(index_keys)) $(round(elapsed, digits=2))s m:$min_visited)")
       last_debug_time = current_time
 
-      if min_visited > 100
+      if min_visited > focus_min
         step_back += 1
 
 
