@@ -302,8 +302,7 @@ function main()
 
       # trace
       if iteration % 10001 == 0
-        inactivity_pct = round(100 * inactivity_counter / inactivity_counter_reset)
-        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) $(floor(inactivity_pct))%")
+        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys))")
       end
 
       if (eval_score > max_score)
@@ -365,11 +364,37 @@ function main()
 
 
     if iteration > 0 && iteration % debug_interval == 0
+      min_visited = 9999999999
+
+      for (key, value) in index
+        p_policy, p_visits = value
+        p_score = length(p_policy)
+        if (p_score >= max_score - step_back)
+          min_visited = min(min_visited, p_visits)
+        end
+      end
+
       current_time = time()
       elapsed = current_time - last_debug_time
-      inactivity_pct = round(100 * inactivity_counter / inactivity_counter_reset)
-      println("$iteration. $max_score ($(max_score - step_back) $(lpad(inactivity_pct, 2, '0'))% $inactivity_new_found_counter/$inactivity_new_found_reset $(length(index_keys)) $(round(elapsed, digits=2))s)")
+      println("$iteration. $max_score ($(max_score - step_back) $inactivity_new_found_counter/$inactivity_new_found_reset $(length(index_keys)) $(round(elapsed, digits=2))s m:$min_visited)")
       last_debug_time = current_time
+
+      if min_visited > 100
+        step_back += 1
+
+
+        for (b_key, b_value) in collect(pairs(backup))
+          b_policy, b_visits = b_value
+          b_score = length(b_policy)
+          if b_score >= max_score - step_back && !haskey(index, b_key)
+            push!(index_keys, b_key)
+            index[b_key] = (b_policy, 0)
+            # println(" + $b_score")
+          end
+        end
+      end
+
+
 
       # for (key, value) in index
       #   p_policy, p_visits = value
@@ -404,21 +429,21 @@ function main()
     #   println("---------------------------------------------------")
     # end
 
-    if inactivity_counter >= inactivity_counter_reset
-      # if selected_score > 10000
-      step_back += 1
-      inactivity_counter = 0
+    # if inactivity_counter >= inactivity_counter_reset
+    #   # if selected_score > 10000
+    #   step_back += 1
+    #   inactivity_counter = 0
 
-      for (b_key, b_value) in collect(pairs(backup))
-        b_policy, b_visits = b_value
-        b_score = length(b_policy)
-        if b_score >= max_score - step_back && !haskey(index, b_key)
-          push!(index_keys, b_key)
-          index[b_key] = (b_policy, 0)
-          # println(" + $b_score")
-        end
-      end
-    end
+    #   for (b_key, b_value) in collect(pairs(backup))
+    #     b_policy, b_visits = b_value
+    #     b_score = length(b_policy)
+    #     if b_score >= max_score - step_back && !haskey(index, b_key)
+    #       push!(index_keys, b_key)
+    #       index[b_key] = (b_policy, 0)
+    #       # println(" + $b_score")
+    #     end
+    #   end
+    # end
 
     if inactivity_new_found_counter >= inactivity_new_found_reset
       step_back = max(0, step_back - 1)
