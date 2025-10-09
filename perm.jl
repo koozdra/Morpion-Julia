@@ -118,7 +118,7 @@ function main()
   end_searched = Dict{UInt64,Bool}()
   taboo = Dict{UInt64,Bool}()
 
-  end_search_debounce = 2000
+  end_search_debounce = 5000
   last_end_search_iteration = 0
 
   taboo_visits = 1000000
