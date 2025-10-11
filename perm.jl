@@ -130,6 +130,15 @@ function main()
 
   focus_balance_distance = 10000000
 
+  for i in 1:1000
+    perm_length = 46 * 46 * 4
+    perm = UInt16.(1:perm_length)
+    shuffle!(perm)
+    perm_moves, perm_moves_hash = eval_dna_and_hash(perm)
+
+    index[perm_moves_hash] = (build_move_policy(perm_moves), 0)
+  end
+
   while true
 
 
