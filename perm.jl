@@ -2,9 +2,8 @@ include("morpion.jl")
 using Random
 using DataStructures
 
-function end_search(moves::Array{Move,1})
+function end_search(moves::Array{Move,1}, back_accept)
   score = length(moves)
-  back_accept_modifier = -5
 
   index = Dict{UInt64,Array{Move,1}}()
 
@@ -48,7 +47,7 @@ function end_search(moves::Array{Move,1})
       # _, eval_points_hash = eval_dna_and_hash_move_policy_uint64(build_move_policy(eval_made_moves))
       eval_points_hash = points_hash(eval_made_moves)
 
-      if eval_score > score + back_accept_modifier && !haskey(index, eval_points_hash)
+      if eval_score > score - back_accept && !haskey(index, eval_points_hash)
         index[eval_points_hash] = eval_made_moves
         no_new_index_counter = 0
       end
@@ -242,7 +241,7 @@ function main()
            iteration > last_end_search_iteration + end_search_debounce
 
       es_start = time()
-      result_index = end_search(collect(keys(move_policy)))
+      result_index = end_search(collect(keys(move_policy)), step_back)
       es_end = time()
 
       new_found_count = 0
