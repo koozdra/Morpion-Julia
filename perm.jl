@@ -115,10 +115,11 @@ function main()
 
   backup = Dict(perm_moves_hash => (build_move_policy(perm_moves), 0))
 
-  end_searched = Dict{UInt64,Bool}()
+  end_searched = Dict{UInt64,Int64}()
   taboo = Dict{UInt64,Bool}()
 
   end_search_debounce = 5000
+  end_search_ttl = 10000000
   last_end_search_iteration = 0
 
   taboo_visits = 1000000
@@ -209,6 +210,15 @@ function main()
 
     index[selected_key] = (move_policy, selected_visits + 1)
 
+    should_end_search =
+      if haskey(end_searched, selected_key)
+        last_visited_iteration = end_searched[selected_key]
+        diff = iteration - last_visited_iteration
+        diff > end_search_ttl
+      else
+        true
+      end
+
     if selected_score < (max_score - step_back)
       # println(" - $selected_score")
       filter!(function (k)
@@ -226,7 +236,7 @@ function main()
           should_keep
         end, index_keys)
 
-    elseif !haskey(end_searched, selected_key) &&
+    elseif should_end_search &&
            selected_score >= (max_score - step_back) &&
            selected_score > 100 &&
            iteration > last_end_search_iteration + end_search_debounce
@@ -286,7 +296,7 @@ function main()
 
       println("$iteration. ES $selected_score f:$(length(result_index)) n:$(new_found_count) $(round(es_end - es_start, digits=2))")
 
-      end_searched[selected_key] = true
+      end_searched[selected_key] = iteration
       last_end_search_iteration = iteration
     else
 
