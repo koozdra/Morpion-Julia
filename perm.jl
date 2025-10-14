@@ -123,7 +123,7 @@ function main()
 
   taboo_visits = 1000000
 
-  focus_min = 10000
+  focus_min = 5000
   focus_max = 1000000
   focus_interval = 1000000
   focus = focus_min
