@@ -181,7 +181,11 @@ function main()
       p_score = length(p_policy)
       is_in_taboo = haskey(taboo, key)
 
-      key_score = p_score - (p_visits / focus)
+      key_score = if p_visits > 1000000
+        0
+      else
+        p_score - (p_visits / focus)
+      end
       # if focus == focus_max
       #   if p_visits < taboo_visits
       #     p_score - (p_visits / focus_max)
