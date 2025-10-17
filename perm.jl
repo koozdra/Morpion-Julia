@@ -101,7 +101,7 @@ function main()
   inactivity_counter = 0
   inactivity_counter_reset = 1000000
   inactivity_new_found_counter = 0
-  inactivity_new_found_reset = 100
+  inactivity_new_found_reset = 10
   step_back = 0
 
   backup_back = 1
@@ -181,11 +181,7 @@ function main()
       p_score = length(p_policy)
       is_in_taboo = haskey(taboo, key)
 
-      key_score = if p_visits > 1000000
-        0
-      else
-        p_score - (p_visits / focus)
-      end
+      key_score = p_score - (p_visits / focus)
       # if focus == focus_max
       #   if p_visits < taboo_visits
       #     p_score - (p_visits / focus_max)
