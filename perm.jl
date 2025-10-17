@@ -219,21 +219,21 @@ function main()
       end
 
     if selected_score < (max_score - step_back)
-      # println(" - $selected_score")
-      filter!(function (k)
-          p_policy, p_visits = index[k]
-          p_score = length(p_policy)
-          should_keep = k != selected_key
+      println(" - selecting out of bounds")
+      # filter!(function (k)
+      #     p_policy, p_visits = index[k]
+      #     p_score = length(p_policy)
+      #     should_keep = k != selected_key
 
-          if !should_keep
-            delete!(index, k)
-            # delete!(end_searched, k)
-            # println("- $p_score")
-            backup[k] = (p_policy, 0)
-          end
+      #     if !should_keep
+      #       delete!(index, k)
+      #       # delete!(end_searched, k)
+      #       # println("- $p_score")
+      #       backup[k] = (p_policy, 0)
+      #     end
 
-          should_keep
-        end, index_keys)
+      #     should_keep
+      #   end, index_keys)
 
     elseif should_end_search &&
            selected_score >= (max_score - step_back) &&
@@ -331,7 +331,7 @@ function main()
           end
         end
 
-        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) m:$min_visited")
+        println("$iteration. $selected_score ($selected_visits) $(max_score - step_back)/$max_score i:$(length(index_keys)) s:$step_back")
 
         if min_visited > focus_min
           step_back += 1
@@ -374,7 +374,7 @@ function main()
 
           if eval_score >= (max_score - step_back)
 
-            println("$iteration. $selected_score ($selected_visits) -> $eval_score")
+            println("$iteration. $selected_score ($selected_visits) -> $eval_score s:$step_back")
             if eval_score > (max_score - step_back)
               inactivity_counter = max(0, inactivity_counter - floor(inactivity_counter_reset / 100))
             end
@@ -489,10 +489,10 @@ function main()
     #   end
     # end
 
-    if inactivity_new_found_counter >= inactivity_new_found_reset
-      step_back = max(0, step_back - 1)
-      inactivity_new_found_counter = 0
-      inactivity_counter = 0
+    calc_step_back = 20 - floor((iteration % 1_000_000) / 50_000)
+
+    if calc_step_back != step_back
+      step_back = calc_step_back
 
       filter!(function (k)
           p_policy, p_visits = index[k]
@@ -509,6 +509,27 @@ function main()
           should_keep
         end, index_keys)
     end
+
+    # if inactivity_new_found_counter >= inactivity_new_found_reset
+    #   step_back = max(0, step_back - 1)
+    #   inactivity_new_found_counter = 0
+    #   inactivity_counter = 0
+
+    #   filter!(function (k)
+    #       p_policy, p_visits = index[k]
+    #       p_score = length(p_policy)
+    #       should_keep = p_score >= max_score - step_back
+
+    #       if !should_keep
+    #         delete!(index, k)
+    #         # delete!(end_searched, k)
+    #         # println("- $p_score")
+    #         backup[k] = (p_policy, 0)
+    #       end
+
+    #       should_keep
+    #     end, index_keys)
+    # end
 
     if length(backup) > 50000
       kvs = collect(backup)                         # Vector of Pair(key => (array, int))
