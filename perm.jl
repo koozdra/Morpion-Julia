@@ -221,20 +221,20 @@ function main()
 
     if selected_score < (max_score - step_back)
       println(" - selecting out of bounds")
-      # filter!(function (k)
-      #     p_policy, p_visits = index[k]
-      #     p_score = length(p_policy)
-      #     should_keep = k != selected_key
+      filter!(function (k)
+          p_policy, p_visits = index[k]
+          p_score = length(p_policy)
+          should_keep = k != selected_key
 
-      #     if !should_keep
-      #       delete!(index, k)
-      #       # delete!(end_searched, k)
-      #       # println("- $p_score")
-      #       backup[k] = (p_policy, 0)
-      #     end
+          if !should_keep
+            delete!(index, k)
+            # delete!(end_searched, k)
+            # println("- $p_score")
+            backup[k] = (p_policy, 0)
+          end
 
-      #     should_keep
-      #   end, index_keys)
+          should_keep
+        end, index_keys)
 
     elseif should_end_search &&
            selected_score >= (max_score - step_back) &&
@@ -491,7 +491,7 @@ function main()
     anneal_distance = 10_000_000
     anneal_max_step_back = 11
 
-    calc_step_back = anneal_max_step_back - floor((iteration % anneal_distance) / (anneal_distance / anneal_max_step_back))
+    calc_step_back = anneal_max_step_back - floor((iteration % anneal_distance) * (anneal_max_step_back + 1) / anneal_distance)
 
     if calc_step_back != step_back
       step_back = calc_step_back
