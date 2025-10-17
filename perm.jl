@@ -173,36 +173,36 @@ function main()
         focus_max
       end
 
-    max_key = nothing
-    max_key_score = 0
-    for key in rand(index_keys, 10)
-      # for key in index_keys
-      p_policy, p_visits = index[key]
-      p_score = length(p_policy)
-      is_in_taboo = haskey(taboo, key)
+    # max_key = nothing
+    # max_key_score = 0
+    # for key in rand(index_keys, 10)
+    #   # for key in index_keys
+    #   p_policy, p_visits = index[key]
+    #   p_score = length(p_policy)
+    #   is_in_taboo = haskey(taboo, key)
 
-      key_score = p_score - (p_visits / focus)
-      # if focus == focus_max
-      #   if p_visits < taboo_visits
-      #     p_score - (p_visits / focus_max)
-      #   else
-      #     0
-      #   end
-      # else
-      #   -p_visits
-      # end
+    #   key_score = p_score - (p_visits / focus)
+    #   # if focus == focus_max
+    #   #   if p_visits < taboo_visits
+    #   #     p_score - (p_visits / focus_max)
+    #   #   else
+    #   #     0
+    #   #   end
+    #   # else
+    #   #   -p_visits
+    #   # end
 
-      if key_score > max_key_score
-        max_key = key
-        max_key_score = key_score
-      end
-    end
-    selected_key = max_key
-    if selected_key === nothing
-      selected_key = index_keys[(iteration%length(index_keys))+1]
-    end
+    #   if key_score > max_key_score
+    #     max_key = key
+    #     max_key_score = key_score
+    #   end
+    # end
+    # selected_key = max_key
+    # if selected_key === nothing
+    #   selected_key = index_keys[(iteration%length(index_keys))+1]
+    # end
 
-    # selected_key = index_keys[(iteration%length(index_keys))+1]
+    selected_key = index_keys[(iteration%length(index_keys))+1]
 
     move_policy, selected_visits = index[selected_key]
     selected_score = length(move_policy)
@@ -379,10 +379,8 @@ function main()
               inactivity_counter = max(0, inactivity_counter - floor(inactivity_counter_reset / 100))
             end
 
-            if eval_score >= selected_score
-              p_policy, p_visits = index[selected_key]
-            end
 
+            p_policy, p_visits = index[selected_key]
             index[selected_key] = (p_policy, 0)
 
             if eval_score > (max_score - step_back)
