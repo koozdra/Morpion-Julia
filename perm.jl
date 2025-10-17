@@ -230,7 +230,7 @@ function main()
             delete!(index, k)
             # delete!(end_searched, k)
             # println("- $p_score")
-            backup[k] = (p_policy, 0)
+            backup[k] = (p_policy, p_visits)
           end
 
           should_keep
@@ -287,8 +287,8 @@ function main()
 
                 inactivity_new_found_counter = 0
               end
-            elseif (found_score >= max_score - step_back - backup_back) && !haskey(backup, f_key)
-              backup[f_key] = (build_move_policy(found_moves), 0)
+              # elseif (found_score >= max_score - step_back - backup_back) && !haskey(backup, f_key)
+              #   backup[f_key] = (build_move_policy(found_moves), 0)
             end
           end
         end
@@ -343,7 +343,7 @@ function main()
             b_score = length(b_policy)
             if b_score >= max_score - step_back && !haskey(index, b_key)
               push!(index_keys, b_key)
-              index[b_key] = (b_policy, 0)
+              index[b_key] = (b_policy, b_visits)
               # println(" + $b_score")
             end
           end
@@ -393,8 +393,8 @@ function main()
 
             index[eval_points_hash] = (build_move_policy(eval_moves), 0)
             push!(index_keys, eval_points_hash)
-          elseif eval_score >= (max_score - step_back - backup_back) && !haskey(backup, eval_points_hash)
-            backup[eval_points_hash] = (build_move_policy(eval_moves), 0)
+            # elseif eval_score >= (max_score - step_back - backup_back) && !haskey(backup, eval_points_hash)
+            #   backup[eval_points_hash] = (build_move_policy(eval_moves), 0)
             # println("$iteration.  $selected_score ($selected_visits) -> $eval_score")
           end
         else
@@ -505,7 +505,7 @@ function main()
             delete!(index, k)
             # delete!(end_searched, k)
             # println("- $p_score")
-            backup[k] = (p_policy, 0)
+            backup[k] = (p_policy, p_visits)
           end
 
           should_keep
