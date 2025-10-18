@@ -489,7 +489,7 @@ function main()
     # end
 
     anneal_distance = 10_000_000
-    anneal_max_step_back = 11
+    anneal_max_step_back = 5
 
     calc_step_back = anneal_max_step_back - floor((iteration % anneal_distance) * (anneal_max_step_back + 1) / anneal_distance)
 
