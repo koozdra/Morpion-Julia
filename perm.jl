@@ -533,7 +533,7 @@ function main()
     #     end, index_keys)
     # end
 
-    if length(backup) > 50000
+    if length(backup) > 500000
       kvs = collect(backup)                         # Vector of Pair(key => (array, int))
       sort!(kvs, by=kv -> length(last(kv)[1]))    # sort by length of the array in the tuple
       k = fld(length(kvs), 2)                       # number to drop (lower half)
