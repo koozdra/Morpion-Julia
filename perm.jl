@@ -489,7 +489,7 @@ function main()
     # end
 
     anneal_distance = 10_000_000
-    anneal_max_step_back = 5
+    anneal_max_step_back = 7
 
     calc_step_back = anneal_max_step_back - floor((iteration % anneal_distance) * (anneal_max_step_back + 1) / anneal_distance)
 
@@ -505,7 +505,7 @@ function main()
             delete!(index, k)
             # delete!(end_searched, k)
             # println("- $p_score")
-            backup[k] = (p_policy, p_visits)
+            backup[k] = (p_policy, p_vis - its)
           end
 
           should_keep
