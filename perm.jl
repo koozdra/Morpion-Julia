@@ -174,7 +174,7 @@ function main()
       end
 
     max_key = nothing
-    max_key_score = 0
+    max_key_score = -99999999
     for key in rand(index_keys, 10)
       # for key in index_keys
       p_policy, p_visits = index[key]
