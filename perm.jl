@@ -505,7 +505,7 @@ function main()
             delete!(index, k)
             # delete!(end_searched, k)
             # println("- $p_score")
-            backup[k] = (p_policy, p_vis - its)
+            backup[k] = (p_policy, p_visits)
           end
 
           should_keep
