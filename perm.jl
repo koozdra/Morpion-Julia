@@ -130,6 +130,9 @@ function main()
 
   focus_balance_distance = 10000000
 
+  anneal_distance = 10_000_000
+  anneal_max_step_back = 20
+
   for i in 1:1000
     perm_length = 46 * 46 * 4
     perm = UInt16.(1:perm_length)
@@ -210,6 +213,11 @@ function main()
 
     index[selected_key] = (move_policy, selected_visits + 1)
 
+    if haskey(backup, selected_key)
+      b_policy, b_visits = backup[selected_key]
+      backup[selected_key] = (move_policy, b_visits + 1)
+    end
+
     should_end_search =
       if haskey(end_searched, selected_key)
         last_visited_iteration = end_searched[selected_key]
@@ -287,8 +295,8 @@ function main()
 
                 inactivity_new_found_counter = 0
               end
-              # elseif (found_score >= max_score - step_back - backup_back) && !haskey(backup, f_key)
-              #   backup[f_key] = (build_move_policy(found_moves), 0)
+            elseif (found_score >= max_score - anneal_max_step_back) && !haskey(backup, f_key)
+              backup[f_key] = (build_move_policy(found_moves), 0)
             end
           end
         end
@@ -368,7 +376,7 @@ function main()
 
       else
         is_in_index = haskey(index, eval_points_hash)
-        is_in_taboo = haskey(taboo, eval_points_hash)
+        # is_in_taboo = haskey(taboo, eval_points_hash)
 
 
         if !is_in_index
@@ -393,8 +401,8 @@ function main()
 
             index[eval_points_hash] = (build_move_policy(eval_moves), 0)
             push!(index_keys, eval_points_hash)
-            # elseif eval_score >= (max_score - step_back - backup_back) && !haskey(backup, eval_points_hash)
-            #   backup[eval_points_hash] = (build_move_policy(eval_moves), 0)
+          elseif eval_score >= (max_score - anneal_max_step_back) && !haskey(backup, eval_points_hash)
+            backup[eval_points_hash] = (build_move_policy(eval_moves), 0)
             # println("$iteration.  $selected_score ($selected_visits) -> $eval_score")
           end
         else
@@ -488,8 +496,7 @@ function main()
     #   end
     # end
 
-    anneal_distance = 10_000_000
-    anneal_max_step_back = 20
+
 
     calc_step_back = anneal_max_step_back - floor((iteration % anneal_distance) * (anneal_max_step_back + 1) / anneal_distance)
 
@@ -533,7 +540,7 @@ function main()
     #     end, index_keys)
     # end
 
-    if length(backup) > 500000
+    if length(backup) > 1_000_000
       kvs = collect(backup)                         # Vector of Pair(key => (array, int))
       sort!(kvs, by=kv -> length(last(kv)[1]))    # sort by length of the array in the tuple
       k = fld(length(kvs), 2)                       # number to drop (lower half)
