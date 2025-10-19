@@ -131,7 +131,7 @@ function main()
   focus_balance_distance = 10000000
 
   anneal_distance = 10_000_000
-  anneal_max_step_back = 20
+  anneal_max_step_back = 30
 
   for i in 1:1000
     perm_length = 46 * 46 * 4
