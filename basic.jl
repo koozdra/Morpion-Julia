@@ -382,7 +382,7 @@ function initialize_search()
 		initial_hash,  # current_index_key
 		empty_board,
 		empty_start_moves,
-		time(),  # start_time
+		timer = time(),  # start_time
 	)
 end
 

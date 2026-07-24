@@ -130,8 +130,8 @@ function main()
 
   focus_balance_distance = 10000000
 
-  anneal_distance = 10_000_000
-  anneal_max_step_back = 30
+  anneal_distance = 1_000_000
+  anneal_max_step_back = 20
 
   for i in 1:1000
     perm_length = 46 * 46 * 4
@@ -383,7 +383,11 @@ function main()
 
           if eval_score >= (max_score - step_back)
 
-            println("$iteration. $selected_score ($selected_visits) -> $eval_score s:$step_back")
+            if eval_score >= selected_score
+              println("$iteration. $selected_score ($selected_visits) -> $eval_score   $(max_score - step_back)/$max_score")
+            end
+
+
             if eval_score > (max_score - step_back)
               inactivity_counter = max(0, inactivity_counter - floor(inactivity_counter_reset / 100))
             end

@@ -803,7 +803,12 @@ end
 
 function generate_pack(morpion::Morpion)
 
-  b = pack_binary(morpion.moves)
+  generate_pack(morpion.moves)
+end
+
+function generate_pack(moves::Array{Move,1})
+
+  b = pack_binary(moves)
 
   i = 1
 
@@ -813,7 +818,7 @@ function generate_pack(morpion::Morpion)
 
   for pos in 1:6:length(b)
 
-    hex = rpad(b[pos:min(length(b), pos + 5)], 6, "0")
+    hex = rpad(b[pos:min(length(b), pos+5)], 6, "0")
 
     # index = parseint("0b"*hex) + 1
     index = parse(Int, "0b" * hex) + 1
@@ -918,6 +923,35 @@ end
     for move in moves
       morpion_dna[dna_index(move)] = length(moves) + 1 - i
       i += 1
+    end
+  end
+
+  morpion_dna
+end
+
+using Random
+
+@inline function generate_dna_all(moves::Array{Move,1})
+  N = 46 * 46 * 4
+  morpion_dna = zeros(UInt16, N)  # UInt8 overflows for N this large
+
+  n_moves = length(moves)
+  used_indices = Vector{Int}(undef, n_moves)
+
+  @inbounds for (i, move) in enumerate(moves)
+    idx = dna_index(move)
+    morpion_dna[idx] = N - i + 1   # first move gets N, then N-1, ...
+    used_indices[i] = idx
+  end
+
+  remaining_values = shuffle(1:(N-n_moves))
+  used_set = Set(used_indices)
+
+  j = 1
+  @inbounds for idx in 1:N
+    if !(idx in used_set)
+      morpion_dna[idx] = remaining_values[j]
+      j += 1
     end
   end
 
