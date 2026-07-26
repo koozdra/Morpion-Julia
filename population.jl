@@ -1,0 +1,346 @@
+# 166 HYhAHqWtBWCUVGkZRRxasI/rdT+39uUf9d22ap+y7/fX7/3+
+# 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
+
+include("morpion.jl")
+using Random
+using DataStructures
+
+function end_search(moves::Array{Move,1}, back_accept)
+  score = length(moves)
+
+  index = Dict{UInt64,Array{Move,1}}()
+
+  # Progressively wind back the moves taken on a board
+  for step_back in 1:floor(Int64, score*0.25)
+    # Make the subset of moves on the board
+    # move_policy = OrderedDict{Move,Int32}()
+    board = initial_board()
+    possible_moves = initial_moves()
+    made_moves = Move[]
+
+    move_index = 1
+    for move in moves[1:(end-step_back)]
+      push!(made_moves, move)
+      make_move(board, move, possible_moves)
+      # move_policy[move] = score - move_index - 1
+      # move_index += 1
+    end
+
+    # Perform a random completion from where the moves left off
+    # Keep track of new configurations found and reset search timer if a new one is found
+    no_new_index_counter = 0
+    # 200 best
+    no_new_index_counter_cut_off = 200
+    while no_new_index_counter <= no_new_index_counter_cut_off && length(index) < 1000
+      eval_board = copy(board)
+      eval_possible_moves = copy(possible_moves)
+      eval_made_moves = copy(made_moves)
+
+      eval_move_index = move_index
+
+      while !isempty(eval_possible_moves)
+        random_possible_move = eval_possible_moves[rand(1:end)]
+        push!(eval_made_moves, random_possible_move)
+        make_move(eval_board, random_possible_move, eval_possible_moves)
+        # move_policy[random_possible_move] = eval_move_index
+        # eval_move_index += 1
+      end
+
+      eval_score = length(eval_made_moves)
+      # extremely slow, must be improved (has to build the policy and then the hash, two iterations through the moves in the hot loop)
+      # _, eval_points_hash = eval_dna_and_hash_move_policy_uint64(build_move_policy(eval_made_moves))
+      eval_points_hash = points_hash(eval_made_moves)
+
+      if eval_score > score - back_accept && !haskey(index, eval_points_hash)
+        index[eval_points_hash] = eval_made_moves
+        no_new_index_counter = 0
+      end
+
+      no_new_index_counter += 1
+    end
+  end
+
+  index
+end
+
+mutable struct Perm
+  visits::Int
+  perm::Vector{UInt16}
+  moves::Vector{Move}
+  moves_hash::UInt64
+end
+
+mutable struct Candidate
+  visits::Int
+  perms::Vector{Perm}
+  index::Dict{UInt64,Int}
+  max_moves::Vector{Move}
+  max_score::Int
+  back_accept::Int
+  idle_counter::Int
+  improvement_counter::Int
+end
+
+function main()
+  perm_length = 46 * 46 * 4
+
+  # initial_candidates_size = 40
+  initial_candidates_size = 1
+  candidates = []
+
+  # hyperparameters
+  # 3 best
+  num_modifications = 2
+  # 4 best
+  # 5 too low
+  # back_accept = 4
+  default_back_accept = 5
+  # 2 best, 4 good, testing something higher, 10
+  selection_skew = 2
+
+  idle_reset = 10
+  idle_reset_step_back = 5
+  improvement_step_up = 50
+
+  end_searched = Dict{UInt64,Bool}()
+  end_search_interval = 2000
+
+
+
+  for i in 1:initial_candidates_size
+
+    perm = UInt16.(1:perm_length)
+    shuffle!(perm)
+    perm_moves, perm_moves_hash = eval_dna_and_hash(perm)
+    perm_score = length(perm_moves)
+
+    push!(candidates,
+      Candidate(
+        0,
+        [
+          Perm(
+            0,
+            perm,
+            perm_moves,
+            perm_moves_hash
+          )
+        ],
+        Dict(perm_moves_hash => 1),
+        perm_moves,
+        perm_score,
+        default_back_accept,
+        0,
+        0
+      )
+    )
+  end
+
+  iteration = 1
+  last_debug_time = time()
+
+  while true
+    candidate_position = (iteration % length(candidates)) + 1
+    candidate = candidates[candidate_position]
+
+    candidate.visits += 1
+
+    # weighted
+    perm_position = floor(Int, rand()^selection_skew * length(candidate.perms)) + 1
+
+    perm = candidate.perms[perm_position]
+    perm_score = length(perm.moves)
+    perm.visits += 1
+
+    candidate.index[perm.moves_hash] += 1
+
+
+    modifications = map(_ -> (dna_index(rand(perm.moves)), rand(1:perm_length)), 1:num_modifications)
+
+    for mod in modifications
+      mod_a, mod_b = mod
+      perm.perm[mod_a], perm.perm[mod_b] =
+        perm.perm[mod_b], perm.perm[mod_a]
+    end
+
+    eval_moves, eval_moves_hash = eval_dna_and_hash(perm.perm)
+    eval_score = length(eval_moves)
+
+    if eval_score > candidate.max_score
+      new_perm = Perm(
+        0,
+        perm.perm,
+        eval_moves,
+        eval_moves_hash
+      )
+
+      candidates[candidate_position] = Candidate(
+        0,
+        [new_perm],
+        Dict(eval_moves_hash => 1),
+        eval_moves,
+        eval_score,
+        default_back_accept,
+        0,
+        0
+      )
+
+      println("$iteration. ###### $eval_score")
+      candidate.idle_counter = 0
+
+
+    elseif eval_score >= (candidate.max_score - candidate.back_accept)
+
+      new_perm = Perm(
+        perm.visits,
+        perm.perm,
+        eval_moves,
+        eval_moves_hash
+      )
+
+      if !haskey(candidate.index, eval_moves_hash)
+        candidate.index[eval_moves_hash] = 1
+        push!(candidate.perms, new_perm)
+        println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
+        candidate.idle_counter = 0
+        perm.visits = 0
+
+        if eval_score > (candidate.max_score - candidate.back_accept)
+          candidate.improvement_counter += 1
+        end
+      end
+
+      if eval_moves_hash == perm.moves_hash
+        candidate.perms[perm_position] = new_perm
+      end
+
+    else
+
+      for mod in reverse(modifications)
+        mod_a, mod_b = mod
+        perm.perm[mod_a], perm.perm[mod_b] =
+          perm.perm[mod_b], perm.perm[mod_a]
+      end
+
+      # perm.perm[move_index], perm.perm[rand_index] =
+      #   perm.perm[rand_index], perm.perm[move_index]
+    end
+
+
+    if iteration % end_search_interval == 0
+      end_search_candidate = rand(candidates)
+      best = argmax(end_search_candidate.perms) do p
+        is_end_searched = haskey(end_searched, p.moves_hash)
+        if is_end_searched
+          0
+        else
+          length(p.moves)
+        end
+      end
+
+      if !haskey(end_searched, best.moves_hash)
+
+        results = end_search(best.moves, 5)
+
+        println("$iteration. ES $(length(best.moves))")
+
+        for (es_moves_hash, es_moves) in sort(collect(results), by=x -> -length(x[2]))
+          es_score = length(es_moves)
+          # println("$(length(best.moves)) $es_score")
+
+
+
+          if es_score > end_search_candidate.max_score
+            end_search_candidate.visits = 0
+            end_search_candidate.perms = [Perm(
+              0,
+              generate_dna_all(es_moves),
+              es_moves,
+              es_moves_hash
+            )]
+            end_search_candidate.index = Dict(es_moves_hash => 1)
+            end_search_candidate.max_moves = es_moves
+            end_search_candidate.max_score = es_score
+
+            println("$iteration. ###### $(end_search_candidate.max_score)")
+            end_search_candidate.idle_counter = 0
+
+            # end_search_candidate.back_accept = 0
+
+          elseif es_score >= (end_search_candidate.max_score - candidate.back_accept) && !haskey(end_search_candidate.index, es_moves_hash)
+            push!(end_search_candidate.perms, Perm(
+              0,
+              generate_dna_all(es_moves),
+              es_moves,
+              es_moves_hash
+            ))
+            end_search_candidate.index[es_moves_hash] = 1
+
+            if es_score > (end_search_candidate.max_score - candidate.back_accept)
+              candidate.improvement_counter += 1
+            end
+
+            println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
+            end_search_candidate.idle_counter = 0
+            #experimental
+            # end_searched[es_moves_hash] = true
+          end
+        end
+
+        end_searched[best.moves_hash] = true
+      end
+
+    end
+
+    if iteration % 100000 == 0
+      current_time = time()
+      elapsed = current_time - last_debug_time
+
+      sort_fn = if (iteration ÷ 100000) % 2 == 0
+        (p -> (-length(p.moves), p.visits))
+      else
+        (p -> p.visits)
+      end
+
+      for c in sort(candidates, by=(c -> c.max_score))
+
+        if c.improvement_counter > improvement_step_up
+          c.improvement_counter = 0
+
+          c.back_accept = max(0, c.back_accept - 1)
+          filter!(c.perms) do perm
+            if length(perm.moves) < c.max_score - c.back_accept
+              delete!(c.index, perm.moves_hash)
+              delete!(end_searched, perm.moves_hash)
+              false  # drop it from c.perms
+            else
+              true   # keep it
+            end
+          end
+        end
+
+        sort!(c.perms, by=sort_fn)
+
+        max_pack = generate_pack(c.max_moves)
+
+        println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(c.idle_counter) i:$(length(c.index)) impr:$(c.improvement_counter) $max_pack")
+
+
+
+        c.idle_counter += 1
+
+        if c.idle_counter > idle_reset
+          c.improvement_counter = 0
+          c.idle_counter = 0
+          c.back_accept += idle_reset_step_back
+        end
+      end
+
+      last_debug_time = current_time
+
+    end
+
+    iteration += 1
+  end
+end
+
+main()
