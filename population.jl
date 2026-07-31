@@ -1,4 +1,5 @@
 # 166 HYhAHqWtBWCUVGkZRRxasI/rdT+39uUf9d22ap+y7/fX7/3+
+# 171 F0wgDolGsg5l0kkIno6jbiovx31/l5b3v42y8je9dvt2d//vvQ
 # 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 
@@ -78,7 +79,7 @@ mutable struct Candidate
   max_moves::Vector{Move}
   max_score::Int
   back_accept::Int
-  idle_counter::Int
+  idle_counter::Float64
   improvement_counter::Int
 end
 
@@ -91,19 +92,19 @@ function main()
 
   # hyperparameters
   # 3 best
-  num_modifications = 2
+  num_modifications = 3
   # 4 best
   # 5 too low
   # back_accept = 4
   default_back_accept = 5
   # 2 best, 4 good, testing something higher, 10
-  selection_skew = 2
+  selection_skew = 3
 
-  idle_reset = 10
+  idle_reset = 100
   idle_reset_step_back = 5
   improvement_step_up = 100
 
-  score_multiplier = 10
+  score_multiplier = 3
 
   end_searched = Dict{UInt64,Bool}()
   end_search_interval = 2000
@@ -201,7 +202,7 @@ function main()
       candidate.index[eval_moves_hash] = new_perm
       push!(candidate.perms, new_perm)
       println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
-      candidate.idle_counter = max(0, candidate.idle_counter - 1)
+      candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
       perm.visits = 0
 
       if eval_score > (candidate.max_score - candidate.back_accept)
@@ -256,7 +257,7 @@ function main()
 
         println("$iteration. ES $(length(best.moves))")
 
-        for (es_moves_hash, es_moves) in sort(collect(results), by=x -> -length(x[2]))
+        for (es_moves_hash, es_moves) in sort(collect(results), by=x -> length(x[2]))
           es_score = length(es_moves)
           # println("$(length(best.moves)) $es_score")
 
@@ -295,7 +296,7 @@ function main()
             end
 
             println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
-            end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 1)
+            end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
             #experimental
             # end_searched[es_moves_hash] = true
           end
@@ -350,7 +351,7 @@ function main()
 
         max_pack = generate_pack(c.max_moves)
 
-        println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(c.idle_counter) i:$(length(c.index)) impr:$(c.improvement_counter) $max_pack")
+        println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(round(c.idle_counter, digits=1)) i:$(length(c.index)) impr:$(c.improvement_counter) $max_pack")
 
 
 
