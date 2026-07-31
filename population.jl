@@ -102,9 +102,9 @@ function main()
 
   idle_reset = 100
   idle_reset_step_back = 5
-  improvement_step_up = 100
+  improvement_step_up = 200
 
-  score_multiplier = 3
+  score_multiplier = 10
 
   end_searched = Dict{UInt64,Bool}()
   end_search_interval = 2000
@@ -339,7 +339,7 @@ function main()
           filter!(c.perms) do perm
             if length(perm.moves) < c.max_score - c.back_accept
               delete!(c.index, perm.moves_hash)
-              delete!(end_searched, perm.moves_hash)
+              # delete!(end_searched, perm.moves_hash)
               false  # drop it from c.perms
             else
               true   # keep it
