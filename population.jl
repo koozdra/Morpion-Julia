@@ -100,14 +100,14 @@ function main()
   # 2 best, 4 good, testing something higher, 10
   selection_skew = 4
 
-  idle_reset = 100
+  idle_reset = 10
   idle_reset_step_back = 5
-  improvement_step_up = 500
+  improvement_step_up = 10
 
   score_multiplier = 10
 
   end_searched = Dict{UInt64,Bool}()
-  end_search_interval = 2000
+  end_search_interval = 10000
 
 
 
