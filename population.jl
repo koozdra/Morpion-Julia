@@ -281,18 +281,18 @@ function main()
 
             # end_search_candidate.back_accept = 0
 
-          elseif es_score >= (end_search_candidate.max_score - candidate.back_accept) && !haskey(end_search_candidate.index, es_moves_hash)
+          elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !haskey(end_search_candidate.index, es_moves_hash)
             new_perm = Perm(
               0,
               generate_dna_all(es_moves),
               es_moves,
               es_moves_hash
             )
-            push!(end_search_candidate.perms, new_perm)
+            pushfirst!(end_search_candidate.perms, new_perm)
             end_search_candidate.index[es_moves_hash] = new_perm
 
             if es_score > (end_search_candidate.max_score - end_search_candidate.back_accept)
-              candidate.improvement_counter += 1
+              end_search_candidate.improvement_counter += 1
             end
 
             println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
