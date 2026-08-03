@@ -104,7 +104,7 @@ function main()
   idle_reset_step_back = 5
   improvement_step_up = 300
 
-  score_multiplier = 10
+  score_multiplier = 2
 
   end_searched = Dict{UInt64,Bool}()
   end_search_interval = 10000
@@ -311,18 +311,21 @@ function main()
       current_time = time()
       elapsed = current_time - last_debug_time
 
-      sort_fn =
-        if (iteration ÷ 100000) % 3 == 0
-          (p -> (-length(p.moves), p.visits))
-        elseif (iteration ÷ 100000) % 3 == 1
-          (p -> p.visits)
-        else
-          function (p)
-            score = length(p.moves)
-            -(score - p.visits/(score * score_multiplier))
-          end
+      # sort_fn =
+      #   if (iteration ÷ 100000) % 3 == 0
+      #     (p -> (-length(p.moves), p.visits))
+      #   elseif (iteration ÷ 100000) % 3 == 1
+      #     (p -> p.visits)
+      #   else
+      #     function (p)
+      #       score = length(p.moves)
+      #       # -(score - p.visits/(score * score_multiplier))
+      #       exploitation = score
+      #       exploration = score_multiplier * sqrt(log(iteration + 1) / p.visits)
+      #       -(exploitation + exploration)
+      #     end
 
-        end
+      #   end
       # sort_fn =
       #   function (p)
       #     score = length(p.moves)
@@ -346,6 +349,25 @@ function main()
             end
           end
         end
+
+        sort_fn =
+          if (iteration ÷ 100000) % 3 == 0
+            (p -> (-length(p.moves), p.visits))
+          elseif (iteration ÷ 100000) % 3 == 1
+            (p -> p.visits)
+          else
+            function (p)
+              score = length(p.moves)
+
+              # normalization 
+              min_score = c.max_score - c.back_accept
+              normalized_score = (score - min_score) / (c.max_score - min_score + 0.0001)
+              exploitation = normalized_score
+              exploration = sqrt(2) * sqrt(log(c.visits + 1) / p.visits)
+              -(exploitation + exploration)
+            end
+
+          end
 
         sort!(c.perms, by=sort_fn)
 
