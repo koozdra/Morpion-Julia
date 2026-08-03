@@ -100,9 +100,9 @@ function main()
   # 2 best, 4 good, testing something higher, 10
   selection_skew = 4
 
-  idle_reset = 20
+  idle_reset = 50
   idle_reset_step_back = 5
-  improvement_step_up = 10
+  improvement_step_up = 300
 
   score_multiplier = 10
 
