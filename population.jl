@@ -100,7 +100,7 @@ function main()
   # 2 best, 4 good, testing something higher, 10
   selection_skew = 4
 
-  idle_reset = 10
+  idle_reset = 20
   idle_reset_step_back = 5
   improvement_step_up = 10
 
@@ -155,7 +155,7 @@ function main()
     perm_score = length(perm.moves)
     perm.visits += 1
 
-    modifications = map(_ -> (dna_index(rand(perm.moves)), rand(1:perm_length)), 1:num_modifications)
+    modifications = map(_ -> (dna_index(rand(perm.moves)), rand(1:perm_length)), 1:rand(1:num_modifications))
 
     for mod in modifications
       mod_a, mod_b = mod
@@ -255,7 +255,7 @@ function main()
 
         results = end_search(best.moves, 5)
 
-        println("$iteration. ES $(length(best.moves))")
+        # println("$iteration. ES $(length(best.moves))")
 
         for (es_moves_hash, es_moves) in sort(collect(results), by=x -> length(x[2]))
           es_score = length(es_moves)
