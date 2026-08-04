@@ -102,7 +102,7 @@ function main()
 
   idle_reset = 50
   idle_reset_step_back = 5
-  improvement_step_up = 300
+  improvement_step_up = 100
 
   score_multiplier = 2
 
