@@ -100,7 +100,7 @@ function main()
   # 2 best, 4 good, testing something higher, 10
   selection_skew = 4
 
-  idle_reset = 50
+  idle_reset = 20
   idle_reset_step_back = 5
   improvement_step_up = 100
 
@@ -351,10 +351,15 @@ function main()
         end
 
         sort_fn =
-          if (iteration ÷ 100000) % 3 == 0
+          if (iteration ÷ 100000) % 4 == 0
             (p -> (-length(p.moves), p.visits))
-          elseif (iteration ÷ 100000) % 3 == 1
+          elseif (iteration ÷ 100000) % 4 == 1
             (p -> p.visits)
+          elseif (iteration ÷ 100000) % 4 == 2
+            function (p)
+              score = length(p.moves)
+              -(score - p.visits/(score * 100))
+            end
           else
             function (p)
               score = length(p.moves)
