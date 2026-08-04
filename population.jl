@@ -200,7 +200,7 @@ function main()
 
 
       candidate.index[eval_moves_hash] = new_perm
-      pushfirst!(candidate.perms, new_perm)
+      push!(candidate.perms, new_perm)
       println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
       candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
       perm.visits = 0
@@ -288,7 +288,7 @@ function main()
               es_moves,
               es_moves_hash
             )
-            pushfirst!(end_search_candidate.perms, new_perm)
+            push!(end_search_candidate.perms, new_perm)
             end_search_candidate.index[es_moves_hash] = new_perm
 
             if es_score > (end_search_candidate.max_score - end_search_candidate.back_accept)
