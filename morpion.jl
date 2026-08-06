@@ -840,43 +840,81 @@ function unpack_pack(pack::String)
 
 end
 
-function unpack_binary(b::String)
+# function unpack_binary(b::String)
 
-  possible_moves = initial_moves()
-  board = initial_board()
+#   possible_moves = initial_moves()
+#   board = initial_board()
 
-  taboo_moves = Dict{Move,Bool}()
-  i = 1
+#   taboo_moves = Dict{Move,Bool}()
+#   i = 1
 
-  moves = Move[]
+#   moves = Move[]
 
-  sort!(possible_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+#   sort!(possible_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
 
-  while !isempty(possible_moves) && i <= length(b)
+#   while !isempty(possible_moves) && i <= length(b)
 
-    #collect all possible moves that don't appear in the taboo list
-    poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves, possible_move), possible_moves)
+#     #collect all possible moves that don't appear in the taboo list
+#     poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves, possible_move), possible_moves)
 
-    #@assert !isempty(poss_moves) "$(possible_moves)"
+#     #@assert !isempty(poss_moves) "$(possible_moves)"
 
-    #sort in a consistent manner
-    sort!(poss_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+#     #sort in a consistent manner
+#     sort!(poss_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
 
-    for move in poss_moves
-      if b[i] == '1'
-        push!(moves, move)
-        make_move(board, move, possible_moves)
-      else
-        taboo_moves[move] = true
-      end
-      i += 1
-    end
+#     for move in poss_moves
+#       if b[i] == '1'
+#         push!(moves, move)
+#         make_move(board, move, possible_moves)
+#       else
+#         taboo_moves[move] = true
+#       end
+#       i += 1
+#     end
 
-  end
+#   end
 
-  moves
+#   moves
 
-end
+# end
+
+# function unpack_binary(b::String)
+
+#   possible_moves = initial_moves()
+#   board = initial_board()
+
+#   taboo_moves = Dict{Move,Bool}()
+#   i = 1
+
+#   morpion = Morpion()
+
+#   sort!(possible_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+
+#   while !isempty(possible_moves) && i <= length(b)
+
+#     #collect all possible moves that don't appear in the taboo list
+#     poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves, possible_move), possible_moves)
+
+#     #@assert !isempty(poss_moves) "$(possible_moves)"
+
+#     #sort in a consistent manner
+#     sort!(poss_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
+
+#     for move in poss_moves
+#       if b[i] == '1'
+#         push!(morpion.moves, move)
+#         make_move(board, move, possible_moves)
+#       else
+#         taboo_moves[move] = true
+#       end
+#       i += 1
+#     end
+
+#   end
+
+#   morpion
+
+# end
 
 function unpack_binary(b::String)
 
@@ -895,7 +933,10 @@ function unpack_binary(b::String)
     #collect all possible moves that don't appear in the taboo list
     poss_moves = filter((possible_move::Move) -> !haskey(taboo_moves, possible_move), possible_moves)
 
-    #@assert !isempty(poss_moves) "$(possible_moves)"
+    #safety net: if nothing is left to decide, stop instead of spinning forever
+    if isempty(poss_moves)
+      break
+    end
 
     #sort in a consistent manner
     sort!(poss_moves, by=(move::Move) -> (move.x, move.y, move.start_x, move.start_y, move.direction))
@@ -906,6 +947,7 @@ function unpack_binary(b::String)
         make_move(board, move, possible_moves)
       else
         taboo_moves[move] = true
+        filter!(m -> m !== move, possible_moves)
       end
       i += 1
     end

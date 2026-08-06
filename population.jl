@@ -1,6 +1,8 @@
 # 166 HYhAHqWtBWCUVGkZRRxasI/rdT+39uUf9d22ap+y7/fX7/3+
 # 171 F0wgDolGsg5l0kkIno6jbiovx31/l5b3v42y8je9dvt2d//vvQ
 # 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
+# 177 AYOOj1VpKGCndhSsQa1s+k3ft/usr69mLd/Su+3f+7Z9/+3u4
+# 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 
 include("morpion.jl")
@@ -72,10 +74,19 @@ mutable struct Perm
   moves_hash::UInt64
 end
 
+struct StepBackPack
+  score::Int
+  visits::Int
+  moves::Vector{Move}
+  iteration_created::Int
+end
+
+
 mutable struct Candidate
   visits::Int
   perms::Vector{Perm}
   index::Dict{UInt64,Perm}
+  step_back_index::Dict{UInt64,StepBackPack}
   max_moves::Vector{Move}
   max_score::Int
   back_accept::Int
@@ -98,7 +109,7 @@ function main()
   # back_accept = 4
   default_back_accept = 5
   # 2 best, 4 good, testing something higher, 10
-  selection_skew = 4
+  selection_skew = 2
 
   idle_reset = 20
   idle_reset_step_back = 5
@@ -130,6 +141,7 @@ function main()
         0,
         [new_perm],
         Dict(perm_moves_hash => new_perm),
+        Dict{UInt64,StepBackPack}(),
         perm_moves,
         perm_score,
         default_back_accept,
@@ -174,19 +186,24 @@ function main()
         eval_moves_hash
       )
 
-      candidates[candidate_position] = Candidate(
-        0,
-        [new_perm],
-        Dict(eval_moves_hash => new_perm),
-        eval_moves,
-        eval_score,
-        default_back_accept,
-        0,
-        0
-      )
+      # candidates[candidate_position] = Candidate(
+      #   0,
+      #   [new_perm],
+      #   Dict(eval_moves_hash => new_perm),
+      #   eval_moves,
+      #   eval_score,
+      #   default_back_accept,
+      #   0,
+      #   0
+      # )
+      push!(candidates[candidate_position].perms, new_perm)
+      candidates[candidate_position].max_score = eval_score
+      candidates[candidate_position].max_moves = eval_moves
+      candidates[candidate_position].index[eval_moves_hash] = new_perm
 
-      println("$iteration. ###### $eval_score")
+      println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) ###### $eval_score")
       candidate.idle_counter = 0
+      candidate.back_accept = default_back_accept
 
 
     elseif eval_score >= (candidate.max_score - candidate.back_accept) && !haskey(candidate.index, eval_moves_hash)
@@ -225,6 +242,8 @@ function main()
       #   )
 
       #   candidate.perms[perm_position] = new_perm
+    elseif eval_score >= (candidate.max_score - candidate.back_accept - 5) && !haskey(candidate.step_back_index, eval_moves_hash)
+      candidate.step_back_index[eval_moves_hash] = StepBackPack(eval_score, 0, eval_moves, iteration)
     end
 
     if eval_moves_hash != perm.moves_hash
@@ -271,15 +290,16 @@ function main()
               es_moves,
               es_moves_hash
             )
-            end_search_candidate.perms = [new_perm]
-            end_search_candidate.index = Dict(es_moves_hash => new_perm)
+
+            push!(end_search_candidate.perms, new_perm)
+            end_search_candidate.index[es_moves_hash] = new_perm
             end_search_candidate.max_moves = es_moves
             end_search_candidate.max_score = es_score
 
-            println("$iteration. ###### $(end_search_candidate.max_score)")
-            end_search_candidate.idle_counter = 0
+            println("$iteration. $(es_score) -> $( end_search_candidate.max_score) ###### $(end_search_candidate.max_score)")
 
-            # end_search_candidate.back_accept = 0
+            end_search_candidate.idle_counter = 0
+            end_search_candidate.back_accept = default_back_accept
 
           elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !haskey(end_search_candidate.index, es_moves_hash)
             new_perm = Perm(
@@ -299,6 +319,8 @@ function main()
             end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
             #experimental
             # end_searched[es_moves_hash] = true
+          elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept - 5) && !haskey(end_search_candidate.step_back_index, es_moves_hash)
+            end_search_candidate.step_back_index[es_moves_hash] = StepBackPack(eval_score, 0, es_moves, iteration)
           end
         end
 
@@ -343,6 +365,12 @@ function main()
             if length(perm.moves) < c.max_score - c.back_accept
               delete!(c.index, perm.moves_hash)
               # delete!(end_searched, perm.moves_hash)
+              c.step_back_index[perm.moves_hash] = StepBackPack(
+                length(perm.moves),
+                perm.visits,
+                perm.moves,
+                iteration
+              )
               false  # drop it from c.perms
             else
               true   # keep it
@@ -378,7 +406,7 @@ function main()
 
         max_pack = generate_pack(c.max_moves)
 
-        println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(round(c.idle_counter, digits=1)) i:$(length(c.index)) impr:$(c.improvement_counter) $max_pack")
+        println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(round(c.idle_counter, digits=1)) i:$(length(c.index)) si:$(length(c.step_back_index)) impr:$(c.improvement_counter) $max_pack")
 
 
 
@@ -388,6 +416,38 @@ function main()
           c.improvement_counter = 0
           c.idle_counter = 0
           c.back_accept += idle_reset_step_back
+
+          filter!(c.step_back_index) do (key, sbp)
+
+            is_in_index = haskey(c.index, key)
+            age = iteration - sbp.iteration_created
+
+            if is_in_index || age > 10000000
+              false
+            else
+
+              if sbp.score >= (c.max_score - c.back_accept)
+                m = sbp.moves
+                h = points_hash(m)
+                new_perm = Perm(
+                  sbp.visits,
+                  generate_dna_all(m),
+                  m,
+                  h
+                )
+                push!(c.perms, new_perm)
+                c.index[h] = new_perm
+
+
+                # println("$iteration. ++ $(sbp.score) ($(sbp.visits))")
+
+                false
+              else
+                # true => keep the pair, false => remove it
+                true
+              end
+            end
+          end
         end
       end
 
