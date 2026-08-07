@@ -248,12 +248,12 @@ function main()
       candidate.step_back_index[eval_moves_hash] = StepBackPack(eval_score, 0, eval_moves, iteration)
     end
 
-    if eval_moves_hash != perm.moves_hash
-      if haskey(candidate.index, eval_moves_hash)
-        p = candidate.index[eval_moves_hash]
-        p.perm = copy(perm.perm)
-      end
-    end
+    # if eval_moves_hash != perm.moves_hash
+    #   if haskey(candidate.index, eval_moves_hash)
+    #     p = candidate.index[eval_moves_hash]
+    #     p.perm = copy(perm.perm)
+    #   end
+    # end
 
     for mod in reverse(modifications)
       mod_a, mod_b = mod
