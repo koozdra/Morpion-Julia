@@ -211,7 +211,7 @@ function main()
       new_perm = Perm(
         0,
         copy(perm.perm),
-        copy(eval_moves),
+        eval_moves,
         eval_moves_hash
       )
 
@@ -252,7 +252,6 @@ function main()
       if haskey(candidate.index, eval_moves_hash)
         p = candidate.index[eval_moves_hash]
         p.perm = copy(perm.perm)
-        p.moves = copy(perm.moves)
       end
     end
 
