@@ -242,7 +242,9 @@ function main()
       #   )
 
       #   candidate.perms[perm_position] = new_perm
-    elseif eval_score >= (candidate.max_score - candidate.back_accept - 5) && !haskey(candidate.step_back_index, eval_moves_hash)
+    elseif eval_score >= (candidate.max_score - candidate.back_accept - 5) &&
+           !haskey(candidate.step_back_index, eval_moves_hash) &&
+           length(candidate.step_back_index) < 300000
       candidate.step_back_index[eval_moves_hash] = StepBackPack(eval_score, 0, eval_moves, iteration)
     end
 
@@ -319,7 +321,9 @@ function main()
             end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
             #experimental
             # end_searched[es_moves_hash] = true
-          elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept - 5) && !haskey(end_search_candidate.step_back_index, es_moves_hash)
+          elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept - 5) &&
+                 !haskey(end_search_candidate.step_back_index, es_moves_hash) &&
+                 length(end_search_candidate.step_back_index) < 300000
             end_search_candidate.step_back_index[es_moves_hash] = StepBackPack(eval_score, 0, es_moves, iteration)
           end
         end
@@ -365,12 +369,14 @@ function main()
             if length(perm.moves) < c.max_score - c.back_accept
               delete!(c.index, perm.moves_hash)
               # delete!(end_searched, perm.moves_hash)
-              c.step_back_index[perm.moves_hash] = StepBackPack(
-                length(perm.moves),
-                perm.visits,
-                perm.moves,
-                iteration
-              )
+              if length(c.step_back_index) < 300000
+                c.step_back_index[perm.moves_hash] = StepBackPack(
+                  length(perm.moves),
+                  perm.visits,
+                  perm.moves,
+                  iteration
+                )
+              end
               false  # drop it from c.perms
             else
               true   # keep it
@@ -448,6 +454,8 @@ function main()
               end
             end
           end
+
+          empty!(c.step_back_index)
         end
       end
 
