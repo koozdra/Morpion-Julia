@@ -392,7 +392,7 @@ function main()
           elseif (iteration ÷ 100000) % 4 == 2
             function (p)
               score = length(p.moves)
-              -(score - p.visits/(score * 100))
+              -(score - p.visits/(score * 1000))
             end
           else
             function (p)
