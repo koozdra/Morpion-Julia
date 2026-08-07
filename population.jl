@@ -209,8 +209,8 @@ function main()
     elseif eval_score >= (candidate.max_score - candidate.back_accept) && !haskey(candidate.index, eval_moves_hash)
 
       new_perm = Perm(
-        perm.visits,
-        perm.perm,
+        0,
+        copy(perm.perm),
         eval_moves,
         eval_moves_hash
       )
@@ -392,7 +392,7 @@ function main()
           elseif (iteration ÷ 100000) % 4 == 2
             function (p)
               score = length(p.moves)
-              -(score - p.visits/(score * 1000))
+              -(score - p.visits/(score * 100))
             end
           else
             function (p)
