@@ -3,6 +3,8 @@
 # 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
 # 177 AYOOj1VpKGCndhSsQa1s+k3ft/usr69mLd/Su+3f+7Z9/+3u4
 # 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
+# 177 CBMXT2TomgmTmJcpVpeTTr589vL/jW/hnms7Z3O29fu5ef9/3w
+# 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 
 include("morpion.jl")
@@ -70,6 +72,7 @@ end
 mutable struct Perm
   visits::Int
   perm::Vector{UInt16}
+  # TODO: remove moves, not using it for anything
   moves::Vector{Move}
   moves_hash::UInt64
 end
@@ -350,17 +353,17 @@ function main()
       for c in sort(candidates, by=(c -> c.max_score))
 
         # sanity on index
-        for (index_key, perm) in c.index
-          test_moves, test_hash = eval_dna_and_hash(perm.perm)
-          valid = index_key == perm.moves_hash &&
-                  test_hash == index_key
+        # for (index_key, perm) in c.index
+        #   test_moves, test_hash = eval_dna_and_hash(perm.perm)
+        #   valid = index_key == perm.moves_hash &&
+        #           test_hash == index_key
 
-          if !valid
-            print("shit $(index_key == perm.moves_hash) $(test_moves == perm.moves) $(test_hash == index_key)")
-            println("$(length(test_moves)) $(length(perm.moves))")
-            readline()
-          end
-        end
+        #   if !valid
+        #     print("shit $(index_key == perm.moves_hash) $(test_moves == perm.moves) $(test_hash == index_key)")
+        #     println("$(length(test_moves)) $(length(perm.moves))")
+        #     readline()
+        #   end
+        # end
 
         if c.improvement_counter > improvement_step_up
           c.improvement_counter = 0
