@@ -109,7 +109,7 @@ function main()
   # back_accept = 4
   default_back_accept = 5
   # 2 best, 4 good, testing something higher, 10
-  selection_skew = 2
+  selection_skew = 4
 
   idle_reset = 20
   idle_reset_step_back = 5
@@ -186,16 +186,6 @@ function main()
         eval_moves_hash
       )
 
-      # candidates[candidate_position] = Candidate(
-      #   0,
-      #   [new_perm],
-      #   Dict(eval_moves_hash => new_perm),
-      #   eval_moves,
-      #   eval_score,
-      #   default_back_accept,
-      #   0,
-      #   0
-      # )
       push!(candidates[candidate_position].perms, new_perm)
       candidates[candidate_position].max_score = eval_score
       candidates[candidate_position].max_moves = eval_moves
@@ -206,42 +196,37 @@ function main()
       candidate.back_accept = default_back_accept
 
 
-    elseif eval_score >= (candidate.max_score - candidate.back_accept) && !haskey(candidate.index, eval_moves_hash)
+    elseif eval_score >= (candidate.max_score - candidate.back_accept)
 
-      new_perm = Perm(
-        0,
-        copy(perm.perm),
-        eval_moves,
-        eval_moves_hash
-      )
+      if !haskey(candidate.index, eval_moves_hash)
+        new_perm = Perm(
+          0,
+          copy(perm.perm),
+          eval_moves,
+          eval_moves_hash
+        )
 
+        candidate.index[eval_moves_hash] = new_perm
+        push!(candidate.perms, new_perm)
+        println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
+        candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
+        perm.visits = 0
 
-      candidate.index[eval_moves_hash] = new_perm
-      push!(candidate.perms, new_perm)
-      println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
-      candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
-      perm.visits = 0
+        if eval_score > (candidate.max_score - candidate.back_accept)
+          candidate.improvement_counter += 1
+        end
+      else
+        current = candidate.index[eval_moves_hash]
+        if length(current.moves) !== eval_score ||
+           eval_moves_hash !== current.moves_hash
+          println("shit")
+          readline()
+        end
 
-      if eval_score > (candidate.max_score - candidate.back_accept)
-        candidate.improvement_counter += 1
+        candidate.index[eval_moves_hash].perm = copy(perm.perm)
+        candidate.index[eval_moves_hash].moves = copy(eval_moves)
       end
-      # else
-      # candidate.index[eval_moves_hash].perm = 
 
-
-      # if eval_moves_hash == perm.moves_hash
-      #   candidate.perms[perm_position] = new_perm
-      # end
-
-      # elseif eval_moves_hash == perm.moves_hash
-      #   new_perm = Perm(
-      #     perm.visits,
-      #     perm.perm,
-      #     eval_moves,
-      #     eval_moves_hash
-      #   )
-
-      #   candidate.perms[perm_position] = new_perm
     elseif eval_score >= (candidate.max_score - candidate.back_accept - 5) &&
            !haskey(candidate.step_back_index, eval_moves_hash) &&
            length(candidate.step_back_index) < 300000
@@ -255,11 +240,14 @@ function main()
     #   end
     # end
 
-    for mod in reverse(modifications)
-      mod_a, mod_b = mod
-      perm.perm[mod_a], perm.perm[mod_b] =
-        perm.perm[mod_b], perm.perm[mod_a]
+    if eval_moves_hash != perm.moves_hash
+      for mod in reverse(modifications)
+        mod_a, mod_b = mod
+        perm.perm[mod_a], perm.perm[mod_b] =
+          perm.perm[mod_b], perm.perm[mod_a]
+      end
     end
+
 
     if iteration % end_search_interval == 0
       end_search_candidate = rand(candidates)
@@ -361,6 +349,19 @@ function main()
 
       for c in sort(candidates, by=(c -> c.max_score))
 
+        # sanity on index
+        for (index_key, perm) in c.index
+          test_moves, test_hash = eval_dna_and_hash(perm.perm)
+          valid = index_key == perm.moves_hash &&
+                  test_hash == index_key
+
+          if !valid
+            print("shit $(index_key == perm.moves_hash) $(test_moves == perm.moves) $(test_hash == index_key)")
+            println("$(length(test_moves)) $(length(perm.moves))")
+            readline()
+          end
+        end
+
         if c.improvement_counter > improvement_step_up
           c.improvement_counter = 0
 
@@ -385,15 +386,15 @@ function main()
         end
 
         sort_fn =
-          if (iteration ÷ 100000) % 4 == 0
+          if (iteration ÷ 100000) % 3 == 0
             (p -> (-length(p.moves), p.visits))
-          elseif (iteration ÷ 100000) % 4 == 1
+          elseif (iteration ÷ 100000) % 3 == 1
             (p -> p.visits)
-          elseif (iteration ÷ 100000) % 4 == 2
-            function (p)
-              score = length(p.moves)
-              -(score - p.visits/(score * 100))
-            end
+            # elseif (iteration ÷ 100000) % 4 == 2
+            #   function (p)
+            #     score = length(p.moves)
+            #     -(score - p.visits/(score * 100))
+            #   end
           else
             function (p)
               score = length(p.moves)
