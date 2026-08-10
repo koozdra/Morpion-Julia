@@ -112,12 +112,12 @@ function main()
   # back_accept = 4
   default_back_accept = 5
   # 2 best, 4 good, testing something higher, 10
-  selection_skew = 4
+  selection_skew = 2
 
   move_selection_skew = 1
 
   idle_reset = 20
-  idle_reset_step_back = 5
+  idle_reset_step_back = 10
   improvement_step_up = 100
 
   score_multiplier = 2
