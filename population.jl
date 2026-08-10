@@ -114,6 +114,8 @@ function main()
   # 2 best, 4 good, testing something higher, 10
   selection_skew = 4
 
+  move_selection_skew = 1
+
   idle_reset = 20
   idle_reset_step_back = 5
   improvement_step_up = 100
@@ -157,6 +159,10 @@ function main()
   iteration = 1
   last_debug_time = time()
 
+  function selectByR(v::Vector, r::Float64)
+    v[floor(Int, r*length(v))+1]
+  end
+
   while true
     candidate_position = (iteration % length(candidates)) + 1
     candidate = candidates[candidate_position]
@@ -164,13 +170,12 @@ function main()
     candidate.visits += 1
 
     # weighted
-    perm_position = floor(Int, rand()^selection_skew * length(candidate.perms)) + 1
-
-    perm = candidate.perms[perm_position]
+    perm = selectByR(candidate.perms, rand()^selection_skew)
     perm_score = length(perm.moves)
     perm.visits += 1
 
-    modifications = map(_ -> (dna_index(rand(perm.moves)), rand(1:perm_length)), 1:rand(1:num_modifications))
+    modifications = map(_ -> (dna_index(selectByR(perm.moves, rand()^move_selection_skew)), rand(1:perm_length)), 1:rand(1:num_modifications))
+
 
     for mod in modifications
       mod_a, mod_b = mod
@@ -389,15 +394,15 @@ function main()
         end
 
         sort_fn =
-          if (iteration ÷ 100000) % 3 == 0
+          if (iteration ÷ 100000) % 4 == 0
             (p -> (-length(p.moves), p.visits))
-          elseif (iteration ÷ 100000) % 3 == 1
+          elseif (iteration ÷ 100000) % 4 == 1
             (p -> p.visits)
-            # elseif (iteration ÷ 100000) % 4 == 2
-            #   function (p)
-            #     score = length(p.moves)
-            #     -(score - p.visits/(score * 100))
-            #   end
+          elseif (iteration ÷ 100000) % 4 == 2
+            function (p)
+              score = length(p.moves)
+              -(score - p.visits/(score * 1000))
+            end
           else
             function (p)
               score = length(p.moves)
