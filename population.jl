@@ -110,15 +110,15 @@ function main()
   # 4 best
   # 5 too low
   # back_accept = 4
-  default_back_accept = 5
+  default_back_accept = 1
   # 2 best, 4 good, testing something higher, 10
   selection_skew = 2
 
   move_selection_skew = 1
 
-  idle_reset = 20
-  idle_reset_step_back = 10
-  improvement_step_up = 100
+  idle_reset = 10
+  idle_reset_step_back = 1
+  improvement_step_up = 1
 
   score_multiplier = 2
 
@@ -372,6 +372,7 @@ function main()
 
         if c.improvement_counter > improvement_step_up
           c.improvement_counter = 0
+          c.idle_counter = 0
 
           c.back_accept = max(0, c.back_accept - 1)
           filter!(c.perms) do perm
