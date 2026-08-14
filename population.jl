@@ -117,7 +117,7 @@ function main()
 
   move_selection_skew = 1
 
-  idle_reset = 10
+  idle_reset = 20
   idle_reset_step_back = 5
   improvement_step_up = 10
 
