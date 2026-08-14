@@ -6,6 +6,7 @@
 # 177 CBMXT2TomgmTmJcpVpeTTr589vL/jW/hnms7Z3O29fu5ef9/3w
 # 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
+# 178 7EBET5ZlRiSHYc0gSqEaxn9OfXDfr79Vak78WKOe7yv//Wm//9v0
 
 include("morpion.jl")
 using Random
@@ -120,6 +121,9 @@ function main()
   idle_reset_step_back = 5
   improvement_step_up = 10
 
+  step_back_index_prune_size = 300_000
+  step_back_index_prune_target_size = Int(step_back_index_prune_size * 0.66)
+
   score_multiplier = 2
 
   end_searched = Dict{UInt64,Bool}()
@@ -186,6 +190,8 @@ function main()
     eval_moves, eval_moves_hash = eval_dna_and_hash(perm.perm)
     eval_score = length(eval_moves)
 
+    is_in_index = haskey(candidate.index, eval_moves_hash)
+
     if eval_score > candidate.max_score
       new_perm = Perm(
         0,
@@ -206,7 +212,7 @@ function main()
 
     elseif eval_score >= (candidate.max_score - candidate.back_accept)
 
-      if !haskey(candidate.index, eval_moves_hash)
+      if !is_in_index
         new_perm = Perm(
           0,
           copy(perm.perm),
@@ -237,7 +243,7 @@ function main()
 
     elseif eval_score >= (candidate.max_score - candidate.back_accept - 5) &&
            !haskey(candidate.step_back_index, eval_moves_hash) &&
-           length(candidate.step_back_index) < 300000
+           !is_in_index
       candidate.step_back_index[eval_moves_hash] = StepBackPack(eval_score, 0, eval_moves, iteration)
     end
 
@@ -278,7 +284,7 @@ function main()
           es_score = length(es_moves)
           # println("$(length(best.moves)) $es_score")
 
-
+          is_in_index = haskey(end_search_candidate.index, es_moves_hash)
 
           if es_score > end_search_candidate.max_score
             end_search_candidate.visits = 0
@@ -299,7 +305,7 @@ function main()
             end_search_candidate.idle_counter = 0
             end_search_candidate.back_accept = default_back_accept
 
-          elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !haskey(end_search_candidate.index, es_moves_hash)
+          elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !is_in_index
             new_perm = Perm(
               0,
               generate_dna_all(es_moves),
@@ -319,7 +325,7 @@ function main()
             # end_searched[es_moves_hash] = true
           elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept - 5) &&
                  !haskey(end_search_candidate.step_back_index, es_moves_hash) &&
-                 length(end_search_candidate.step_back_index) < 300000
+                 !is_in_index
             end_search_candidate.step_back_index[es_moves_hash] = StepBackPack(eval_score, 0, es_moves, iteration)
           end
         end
@@ -332,6 +338,7 @@ function main()
     if iteration % 100000 == 0
       current_time = time()
       elapsed = current_time - last_debug_time
+
 
       # sort_fn =
       #   if (iteration ÷ 100000) % 3 == 0
@@ -357,6 +364,22 @@ function main()
 
       for c in sort(candidates, by=(c -> c.max_score))
 
+
+        if length(c.step_back_index) >= step_back_index_prune_size
+          items = collect(c.step_back_index)
+
+          partialsort!(items, 1:step_back_index_prune_target_size;
+            by=x -> x[2].score,
+            rev=true
+          )
+
+          empty!(c.step_back_index)
+
+          for (key, value) in @view items[1:step_back_index_prune_target_size]
+            c.step_back_index[key] = value
+          end
+        end
+
         # sanity on index
         # for (index_key, perm) in c.index
         #   test_moves, test_hash = eval_dna_and_hash(perm.perm)
@@ -379,14 +402,14 @@ function main()
             if length(perm.moves) < c.max_score - c.back_accept
               delete!(c.index, perm.moves_hash)
               # delete!(end_searched, perm.moves_hash)
-              if length(c.step_back_index) < 300000
-                c.step_back_index[perm.moves_hash] = StepBackPack(
-                  length(perm.moves),
-                  perm.visits,
-                  perm.moves,
-                  iteration
-                )
-              end
+
+              c.step_back_index[perm.moves_hash] = StepBackPack(
+                length(perm.moves),
+                perm.visits,
+                perm.moves,
+                iteration
+              )
+
               false  # drop it from c.perms
             else
               true   # keep it
@@ -438,34 +461,21 @@ function main()
             is_in_index = haskey(c.index, key)
             age = iteration - sbp.iteration_created
 
-            if is_in_index || age > 10000000
-              false
-            else
-
-              if sbp.score >= (c.max_score - c.back_accept)
-                m = sbp.moves
-                h = points_hash(m)
-                new_perm = Perm(
-                  sbp.visits,
-                  generate_dna_all(m),
-                  m,
-                  h
-                )
-                push!(c.perms, new_perm)
-                c.index[h] = new_perm
-
-
-                # println("$iteration. ++ $(sbp.score) ($(sbp.visits))")
-
-                false
-              else
-                # true => keep the pair, false => remove it
-                true
-              end
+            if ! is_in_index && sbp.score >= (c.max_score - c.back_accept)
+              m = sbp.moves
+              h = points_hash(m)
+              new_perm = Perm(
+                sbp.visits,
+                generate_dna_all(m),
+                m,
+                h
+              )
+              push!(c.perms, new_perm)
+              c.index[h] = new_perm
             end
-          end
 
-          empty!(c.step_back_index)
+            false
+          end
         end
       end
 
