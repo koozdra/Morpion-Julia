@@ -105,20 +105,20 @@ function main()
   initial_candidates_size = 1
   candidates = []
 
-  # hyperparameters
+  # hyper-parameters
   # 3 best
   num_modifications = 3
   # 4 best
   # 5 too low
   # back_accept = 4
-  default_back_accept = 1
+  default_back_accept = 10
   # 2 best, 4 good, testing something higher, 10
   selection_skew = 2
 
   move_selection_skew = 1
 
   idle_reset = 20
-  idle_reset_step_back = 5
+  idle_reset_step_back = 10
   improvement_step_up = 10
 
   step_back_index_prune_size = 300_000
@@ -414,6 +414,8 @@ function main()
             else
               true   # keep it
             end
+
+
           end
         end
 
@@ -476,6 +478,8 @@ function main()
 
             false
           end
+
+          empty!(c.step_back_index)
         end
       end
 
