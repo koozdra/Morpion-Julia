@@ -114,7 +114,7 @@ function main()
   # back_accept = 4
   default_back_accept = 10
   # 2 best, 4 good, testing something higher, 10
-  selection_skew = 2
+  selection_skew = 4
 
   move_selection_skew = 1
 
