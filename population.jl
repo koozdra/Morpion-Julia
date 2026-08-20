@@ -123,7 +123,7 @@ function main()
 
   idle_reset = 8
   idle_reset_step_back = 10
-  improvement_step_up = 0
+  improvement_step_up = 16
 
   step_back_index_prune_size = 300_000
   step_back_index_prune_target_size = Int(step_back_index_prune_size * 0.66)
@@ -399,7 +399,7 @@ function main()
 
         if c.improvement_counter >= improvement_step_up
           c.improvement_counter = 0
-          # c.idle_counter = 0
+          c.idle_counter = 0
 
           c.back_accept = max(0, c.back_accept - 1)
           filter!(c.perms) do perm
