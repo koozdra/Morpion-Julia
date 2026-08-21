@@ -245,10 +245,10 @@ function main()
         candidate.index[eval_moves_hash].moves = copy(eval_moves)
       end
 
-    elseif eval_score >= (candidate.max_score - candidate.back_accept - 5) &&
-           !haskey(candidate.step_back_index, eval_moves_hash) &&
-           !is_in_index
-      candidate.step_back_index[eval_moves_hash] = StepBackPack(eval_score, 0, eval_moves, iteration)
+      # elseif eval_score >= (candidate.max_score - candidate.back_accept - 5) &&
+      #        !haskey(candidate.step_back_index, eval_moves_hash) &&
+      #        !is_in_index
+      #   candidate.step_back_index[eval_moves_hash] = StepBackPack(eval_score, 0, eval_moves, iteration)
     end
 
     # if eval_moves_hash != perm.moves_hash
@@ -327,10 +327,10 @@ function main()
             end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
             #experimental
             # end_searched[es_moves_hash] = true
-          elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept - 5) &&
-                 !haskey(end_search_candidate.step_back_index, es_moves_hash) &&
-                 !is_in_index
-            end_search_candidate.step_back_index[es_moves_hash] = StepBackPack(eval_score, 0, es_moves, iteration)
+            # elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept - 5) &&
+            #        !haskey(end_search_candidate.step_back_index, es_moves_hash) &&
+            #        !is_in_index
+            #   end_search_candidate.step_back_index[es_moves_hash] = StepBackPack(eval_score, 0, es_moves, iteration)
           end
         end
 
@@ -369,20 +369,20 @@ function main()
       for c in sort(candidates, by=(c -> c.max_score))
 
 
-        if length(c.step_back_index) >= step_back_index_prune_size
-          items = collect(c.step_back_index)
+        # if length(c.step_back_index) >= step_back_index_prune_size
+        #   items = collect(c.step_back_index)
 
-          partialsort!(items, 1:step_back_index_prune_target_size;
-            by=x -> x[2].score,
-            rev=true
-          )
+        #   partialsort!(items, 1:step_back_index_prune_target_size;
+        #     by=x -> x[2].score,
+        #     rev=true
+        #   )
 
-          empty!(c.step_back_index)
+        #   empty!(c.step_back_index)
 
-          for (key, value) in @view items[1:step_back_index_prune_target_size]
-            c.step_back_index[key] = value
-          end
-        end
+        #   for (key, value) in @view items[1:step_back_index_prune_target_size]
+        #     c.step_back_index[key] = value
+        #   end
+        # end
 
         # sanity on index
         # for (index_key, perm) in c.index
@@ -407,12 +407,12 @@ function main()
               delete!(c.index, perm.moves_hash)
               # delete!(end_searched, perm.moves_hash)
 
-              c.step_back_index[perm.moves_hash] = StepBackPack(
-                length(perm.moves),
-                perm.visits,
-                perm.moves,
-                iteration
-              )
+              # c.step_back_index[perm.moves_hash] = StepBackPack(
+              #   length(perm.moves),
+              #   perm.visits,
+              #   perm.moves,
+              #   iteration
+              # )
 
               false  # drop it from c.perms
             else
