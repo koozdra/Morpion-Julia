@@ -123,7 +123,7 @@ function main()
 
   idle_reset = 16
   idle_reset_step_back = 10
-  improvement_step_up = 1024
+  improvement_step_up = 128
 
   step_back_index_prune_size = 300_000
   step_back_index_prune_target_size = Int(step_back_index_prune_size * 0.66)
@@ -227,10 +227,11 @@ function main()
         candidate.index[eval_moves_hash] = new_perm
         push!(candidate.perms, new_perm)
         println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
-        candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
+
         perm.visits = 0
 
         if eval_score > (candidate.max_score - candidate.back_accept)
+          candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
           candidate.improvement_counter += 1
         end
       else
@@ -320,11 +321,12 @@ function main()
             end_search_candidate.index[es_moves_hash] = new_perm
 
             if es_score > (end_search_candidate.max_score - end_search_candidate.back_accept)
+              end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
               end_search_candidate.improvement_counter += 1
             end
 
             println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
-            end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
+
             #experimental
             # end_searched[es_moves_hash] = true
             # elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept - 5) &&
