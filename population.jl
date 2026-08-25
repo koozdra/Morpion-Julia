@@ -111,7 +111,7 @@ function main()
 
   # hyper-parameters
   # 3 best
-  num_modifications = 3
+  num_modifications = 10
   # 4 best
   # 5 too low
   # back_accept = 4
