@@ -113,19 +113,19 @@ function main()
 
   # hyper-parameters
   # 3 best
-  num_modifications = 10
+  num_modifications = 20
   # 4 best
   # 5 too low
   # back_accept = 4
-  default_back_accept = 10
+  default_back_accept = 20
   # 2 best, 4 good, testing something higher, 10
   selection_skew = 4
 
   move_selection_skew = 1
 
   idle_reset = 32
-  idle_reset_step_back = 10
-  improvement_step_up = 32
+  idle_reset_step_back = 20
+  improvement_step_up = 8
 
   step_back_index_prune_size = 300_000
   step_back_index_prune_target_size = Int(step_back_index_prune_size * 0.66)
