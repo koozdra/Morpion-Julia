@@ -8,6 +8,7 @@
 # 177 AYOOj1VpKGCndhSsQa1s+k3ft/usr69mLd/Su+3f+7Z9/+3u4
 # 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
 # 177 CBMXT2TomgmTmJcpVpeTTr589vL/jW/hnms7Z3O29fu5ef9/3w
+# 177 IiAjf2jokjJLE4Zwyk4vWzYlXn77f1lf/be7tN7f/p5fv/t7X
 # 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 # 178 7EBET5ZlRiSHYc0gSqEaxn9OfXDfr79Vak78WKOe7yv//Wm//9v0
@@ -123,7 +124,7 @@ function main()
 
   idle_reset = 64
   idle_reset_step_back = 10
-  improvement_step_up = 128
+  improvement_step_up = 10
 
   step_back_index_prune_size = 300_000
   step_back_index_prune_target_size = Int(step_back_index_prune_size * 0.66)
@@ -229,9 +230,9 @@ function main()
         println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
 
         perm.visits = 0
+        candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
 
         if eval_score > (candidate.max_score - candidate.back_accept)
-          candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
           candidate.improvement_counter += 1
         end
       else
@@ -320,8 +321,9 @@ function main()
             push!(end_search_candidate.perms, new_perm)
             end_search_candidate.index[es_moves_hash] = new_perm
 
+            end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
+
             if es_score > (end_search_candidate.max_score - end_search_candidate.back_accept)
-              end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
               end_search_candidate.improvement_counter += 1
             end
 
