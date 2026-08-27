@@ -117,15 +117,15 @@ function main()
   # 4 best
   # 5 too low
   # back_accept = 4
-  default_back_accept = 20
+  default_back_accept = 5
   # 2 best, 4 good, testing something higher, 10
-  selection_skew = 4
+  selection_skew = 10
 
   move_selection_skew = 1
 
   idle_reset = 32
-  idle_reset_step_back = 20
-  improvement_step_up = 8
+  idle_reset_step_back = default_back_accept
+  improvement_step_up = 16
 
   step_back_index_prune_size = 300_000
   step_back_index_prune_target_size = Int(step_back_index_prune_size * 0.66)
@@ -211,7 +211,7 @@ function main()
       candidates[candidate_position].max_moves = eval_moves
       candidates[candidate_position].index[eval_moves_hash] = new_perm
 
-      println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) ###### $eval_score")
+      println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
       candidate.idle_counter = 0
       candidate.back_accept = default_back_accept
 
@@ -228,7 +228,14 @@ function main()
 
         candidate.index[eval_moves_hash] = new_perm
         push!(candidate.perms, new_perm)
-        println("$iteration. $perm_score ($(perm.visits)) -> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
+
+        arrow_symbol =
+          if eval_score > perm_score
+            "="
+          else
+            "-"
+          end
+        println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
 
         perm.visits = 0
         candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
