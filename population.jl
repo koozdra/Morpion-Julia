@@ -123,7 +123,7 @@ function main()
 
   move_selection_skew = 1
 
-  idle_reset = 32
+  idle_reset = 16
   idle_reset_step_back = default_back_accept
   improvement_step_up = 16
 
