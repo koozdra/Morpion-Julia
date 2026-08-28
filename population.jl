@@ -124,7 +124,7 @@ function main()
   move_selection_skew = 1
 
   idle_reset = 4
-  idles_reset_step_back = default_back_accept
+  idle_reset_step_back = default_back_accept
   improvement_step_up = 16
 
   step_back_index_prune_size = 300_000
