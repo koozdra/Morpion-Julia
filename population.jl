@@ -117,13 +117,13 @@ function main()
   # 4 best
   # 5 too low
   # back_accept = 4
-  default_back_accept = 5
+  default_back_accept = 1
   # 2 best, 4 good, testing something higher, 10
   selection_skew = 10
 
   move_selection_skew = 1
 
-  idle_reset = 16
+  idle_reset = 4
   idle_reset_step_back = default_back_accept
   improvement_step_up = 16
 
@@ -238,9 +238,10 @@ function main()
         println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
 
         perm.visits = 0
-        candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
+
 
         if eval_score > (candidate.max_score - candidate.back_accept)
+          candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
           candidate.improvement_counter += 1
         end
       else
@@ -329,9 +330,10 @@ function main()
             push!(end_search_candidate.perms, new_perm)
             end_search_candidate.index[es_moves_hash] = new_perm
 
-            end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
+
 
             if es_score > (end_search_candidate.max_score - end_search_candidate.back_accept)
+              end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
               end_search_candidate.improvement_counter += 1
             end
 
