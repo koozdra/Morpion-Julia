@@ -8,6 +8,7 @@
 # 177 AYOOj1VpKGCndhSsQa1s+k3ft/usr69mLd/Su+3f+7Z9/+3u4
 # 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
 # 177 FEBMv6lokkiL84GQw9LndS5++33Kr9d8RvfNu/Nv/5zff/b3W
+# 177 FEBMv6lokkqKS4cwzB4f1Vc/fb7lr9d8RvfNu/Nv/p5vv/t7b
 # 177 CBMXT2TomgmTmJcpVpeTTr589vL/jW/hnms7Z3O29fu5ef9/3w
 # 177 IiAjf2jokjJLE4Zwyk4vWzYlXn77f1lf/be7tN7f/p5fv/t7X
 # 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
@@ -108,7 +109,7 @@ function main()
   perm_length = 46 * 46 * 4
 
   # initial_candidates_size = 40
-  initial_candidates_size = 1
+  initial_candidates_size = 40
   candidates = []
 
   # hyper-parameters
@@ -211,7 +212,7 @@ function main()
       candidates[candidate_position].max_moves = eval_moves
       candidates[candidate_position].index[eval_moves_hash] = new_perm
 
-      println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
+      # println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
       candidate.idle_counter = 0
       candidate.back_accept = default_back_accept
 
@@ -235,7 +236,7 @@ function main()
           else
             "-"
           end
-        println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
+        # println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
 
         perm.visits = 0
 
@@ -245,29 +246,11 @@ function main()
           candidate.improvement_counter += 1
         end
       else
-        current = candidate.index[eval_moves_hash]
-        if length(current.moves) !== eval_score ||
-           eval_moves_hash !== current.moves_hash
-          println("shit")
-          readline()
-        end
 
         candidate.index[eval_moves_hash].perm = copy(perm.perm)
         candidate.index[eval_moves_hash].moves = copy(eval_moves)
       end
-
-      # elseif eval_score >= (candidate.max_score - candidate.back_accept - 5) &&
-      #        !haskey(candidate.step_back_index, eval_moves_hash) &&
-      #        !is_in_index
-      #   candidate.step_back_index[eval_moves_hash] = StepBackPack(eval_score, 0, eval_moves, iteration)
     end
-
-    # if eval_moves_hash != perm.moves_hash
-    #   if haskey(candidate.index, eval_moves_hash)
-    #     p = candidate.index[eval_moves_hash]
-    #     p.perm = copy(perm.perm)
-    #   end
-    # end
 
     if eval_moves_hash != perm.moves_hash
       for mod in reverse(modifications)
@@ -293,11 +276,8 @@ function main()
 
         results = end_search(best.moves, 5)
 
-        # println("$iteration. ES $(length(best.moves))")
-
         for (es_moves_hash, es_moves) in sort(collect(results), by=x -> length(x[2]))
           es_score = length(es_moves)
-          # println("$(length(best.moves)) $es_score")
 
           is_in_index = haskey(end_search_candidate.index, es_moves_hash)
 
@@ -315,7 +295,7 @@ function main()
             end_search_candidate.max_moves = es_moves
             end_search_candidate.max_score = es_score
 
-            println("$iteration. $(es_score) -> $( end_search_candidate.max_score) ###### $(end_search_candidate.max_score)")
+            # println("$iteration. $(es_score) -> $( end_search_candidate.max_score) ###### $(end_search_candidate.max_score)")
 
             end_search_candidate.idle_counter = 0
             end_search_candidate.back_accept = default_back_accept
@@ -337,14 +317,7 @@ function main()
               end_search_candidate.improvement_counter += 1
             end
 
-            println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
-
-            #experimental
-            # end_searched[es_moves_hash] = true
-            # elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept - 5) &&
-            #        !haskey(end_search_candidate.step_back_index, es_moves_hash) &&
-            #        !is_in_index
-            #   end_search_candidate.step_back_index[es_moves_hash] = StepBackPack(eval_score, 0, es_moves, iteration)
+            # println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
           end
         end
 
@@ -358,59 +331,7 @@ function main()
       elapsed = current_time - last_debug_time
 
 
-      # sort_fn =
-      #   if (iteration ÷ 100000) % 3 == 0
-      #     (p -> (-length(p.moves), p.visits))
-      #   elseif (iteration ÷ 100000) % 3 == 1
-      #     (p -> p.visits)
-      #   else
-      #     function (p)
-      #       score = length(p.moves)
-      #       # -(score - p.visits/(score * score_multiplier))
-      #       exploitation = score
-      #       exploration = score_multiplier * sqrt(log(iteration + 1) / p.visits)
-      #       -(exploitation + exploration)
-      #     end
-
-      #   end
-      # sort_fn =
-      #   function (p)
-      #     score = length(p.moves)
-      #     -(score - p.visits/(score * score_multiplier))
-      #   end
-
-
       for c in sort(candidates, by=(c -> c.max_score))
-
-
-        # if length(c.step_back_index) >= step_back_index_prune_size
-        #   items = collect(c.step_back_index)
-
-        #   partialsort!(items, 1:step_back_index_prune_target_size;
-        #     by=x -> x[2].score,
-        #     rev=true
-        #   )
-
-        #   empty!(c.step_back_index)
-
-        #   for (key, value) in @view items[1:step_back_index_prune_target_size]
-        #     c.step_back_index[key] = value
-        #   end
-        # end
-
-        # sanity on index
-        # for (index_key, perm) in c.index
-        #   test_moves, test_hash = eval_dna_and_hash(perm.perm)
-        #   valid = index_key == perm.moves_hash &&
-        #           test_hash == index_key
-
-        #   if !valid
-        #     print("shit $(index_key == perm.moves_hash) $(test_moves == perm.moves) $(test_hash == index_key)")
-        #     println("$(length(test_moves)) $(length(perm.moves))")
-        #     readline()
-        #   end
-        # end
-
         if c.improvement_counter >= improvement_step_up
           c.improvement_counter = 0
           c.idle_counter = 0
@@ -465,7 +386,7 @@ function main()
 
         max_pack = generate_pack(c.max_moves)
 
-        println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(round(c.idle_counter, digits=1)) i:$(length(c.index)) si:$(length(c.step_back_index)) impr:$(c.improvement_counter) $max_pack")
+        println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(round(c.idle_counter, digits=1)) i:$(length(c.index)) impr:$(c.improvement_counter) $max_pack")
 
 
 
