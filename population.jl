@@ -109,7 +109,7 @@ function main()
   perm_length = 46 * 46 * 4
 
   # initial_candidates_size = 40
-  initial_candidates_size = 40
+  initial_candidates_size = 10
   candidates = []
 
   # hyper-parameters
@@ -124,7 +124,7 @@ function main()
 
   move_selection_skew = 1
 
-  idle_reset = 64
+  idle_reset = 16
   idle_reset_step_back = default_back_accept
   improvement_step_up = 128
 
