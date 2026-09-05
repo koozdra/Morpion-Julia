@@ -109,7 +109,7 @@ function main()
   perm_length = 46 * 46 * 4
 
   # initial_candidates_size = 40
-  initial_candidates_size = 10
+  initial_candidates_size = 1
   candidates = []
 
   # hyper-parameters
@@ -124,7 +124,7 @@ function main()
 
   move_selection_skew = 1
 
-  idle_reset = 8
+  idle_reset = 16
   idle_reset_step_back = default_back_accept
   improvement_step_up = 32
 
@@ -212,7 +212,7 @@ function main()
       candidates[candidate_position].max_moves = eval_moves
       candidates[candidate_position].index[eval_moves_hash] = new_perm
 
-      # println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
+      println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
       candidate.idle_counter = 0
       candidate.back_accept = default_back_accept
 
@@ -236,7 +236,7 @@ function main()
           else
             "-"
           end
-        # println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
+        println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
 
         perm.visits = 0
 
@@ -295,7 +295,7 @@ function main()
             end_search_candidate.max_moves = es_moves
             end_search_candidate.max_score = es_score
 
-            # println("$iteration. $(es_score) -> $( end_search_candidate.max_score) ###### $(end_search_candidate.max_score)")
+            println("$iteration. $(es_score) -> $( end_search_candidate.max_score) ###### $(end_search_candidate.max_score)")
 
             end_search_candidate.idle_counter = 0
             end_search_candidate.back_accept = default_back_accept
@@ -317,7 +317,7 @@ function main()
               end_search_candidate.improvement_counter += 1
             end
 
-            # println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
+            println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
           end
         end
 
