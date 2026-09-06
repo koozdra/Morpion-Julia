@@ -120,11 +120,11 @@ function main()
   # back_accept = 4
   default_back_accept = 10
   # 2 best, 4 good, testing something higher, 10
-  selection_skew = 10
+  selection_skew = 2
 
   move_selection_skew = 1
 
-  idle_reset = 16
+  idle_reset = 32
   idle_reset_step_back = default_back_accept
   improvement_step_up = 32
 
@@ -185,7 +185,7 @@ function main()
     perm_score = length(perm.moves)
     perm.visits += 1
 
-    modifications = map(_ -> (dna_index(selectByR(perm.moves, rand()^move_selection_skew)), rand(1:perm_length)), 1:rand(1:num_modifications))
+    modifications = map(_ -> (dna_index(selectByR(perm.moves, rand()^move_selection_skew)), rand(1:perm_length)), 1:rand(2:num_modifications))
 
 
     for mod in modifications
@@ -240,9 +240,9 @@ function main()
 
         perm.visits = 0
 
-
+        candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
         if eval_score > (candidate.max_score - candidate.back_accept)
-          candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
+
           candidate.improvement_counter += 1
         end
       else
@@ -311,9 +311,9 @@ function main()
             end_search_candidate.index[es_moves_hash] = new_perm
 
 
-
+            end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
             if es_score > (end_search_candidate.max_score - end_search_candidate.back_accept)
-              end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
+
               end_search_candidate.improvement_counter += 1
             end
 
