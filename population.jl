@@ -19,6 +19,24 @@ include("morpion.jl")
 using Random
 using DataStructures
 
+function selectByR(v::Vector, r::Float64)
+  v[floor(Int, r*length(v))+1]
+end
+
+function apply_swaps!(perm::Vector{UInt16}, swaps)
+  for (a, b) in swaps
+    perm[a], perm[b] = perm[b], perm[a]
+  end
+  perm
+end
+
+function revert_swaps!(perm::Vector{UInt16}, swaps)
+  for (a, b) in reverse(swaps)
+    perm[a], perm[b] = perm[b], perm[a]
+  end
+  perm
+end
+
 function end_search(moves::Array{Move,1}, back_accept)
   score = length(moves)
 
@@ -105,28 +123,46 @@ mutable struct Candidate
   improvement_counter::Int
 end
 
-function main()
+# Tighten back_accept by one and drop every perm (and its index entry) that
+# falls below the new acceptance window.
+function prune_candidate!(c::Candidate)
+  c.improvement_counter = 0
+  c.idle_counter = 0
+
+  c.back_accept = max(0, c.back_accept - 1)
+  filter!(c.perms) do perm
+    if length(perm.moves) < c.max_score - c.back_accept
+      delete!(c.index, perm.moves_hash)
+      false  # drop it from c.perms
+    else
+      true   # keep it
+    end
+  end
+
+  c
+end
+
+function main(; max_iterations::Union{Nothing,Int}=nothing,
+  end_search_interval::Int=10000,
+  # maintenance (perm re-sorting, pruning, idle bookkeeping) runs every
+  # debug_interval iterations; the progress line prints every print_interval
+  # iterations (keep it a multiple of debug_interval)
+  debug_interval::Int=100000,
+  print_interval::Int=100000,
+  verbose::Bool=true,
+  # hyper-parameters (defaults are the hand-tuned values; see tune.jl for the
+  # search harness that explores them)
+  num_modifications::Int=10,
+  default_back_accept::Int=10,
+  selection_skew::Real=2,
+  move_selection_skew::Real=1,
+  idle_reset::Int=32,
+  idle_reset_step_back::Int=default_back_accept,
+  improvement_step_up::Int=32,
+  initial_candidates_size::Int=1)
   perm_length = 46 * 46 * 4
 
-  # initial_candidates_size = 40
-  initial_candidates_size = 1
-  candidates = []
-
-  # hyper-parameters
-  # 3 best
-  num_modifications = 10
-  # 4 best
-  # 5 too low
-  # back_accept = 4
-  default_back_accept = 10
-  # 2 best, 4 good, testing something higher, 10
-  selection_skew = 2
-
-  move_selection_skew = 1
-
-  idle_reset = 32
-  idle_reset_step_back = default_back_accept
-  improvement_step_up = 32
+  candidates = Candidate[]
 
   step_back_index_prune_size = 300_000
   step_back_index_prune_target_size = Int(step_back_index_prune_size * 0.66)
@@ -134,7 +170,6 @@ function main()
   score_multiplier = 2
 
   end_searched = Dict{UInt64,Bool}()
-  end_search_interval = 10000
 
 
 
@@ -167,14 +202,18 @@ function main()
     )
   end
 
+  # reusable rollout buffers for eval_dna_and_hash! (eval_moves aliases
+  # eval_made below, so it must be copied before being stored anywhere)
+  eval_board = zeros(UInt8, 46 * 46)
+  eval_possible = Move[]
+  eval_made = Move[]
+  eval_points_board = zeros(Bool, 46 * 46)
+  eval_values = UInt16[]
+
   iteration = 1
   last_debug_time = time()
 
-  function selectByR(v::Vector, r::Float64)
-    v[floor(Int, r*length(v))+1]
-  end
-
-  while true
+  while max_iterations === nothing || iteration <= max_iterations
     candidate_position = (iteration % length(candidates)) + 1
     candidate = candidates[candidate_position]
 
@@ -187,14 +226,9 @@ function main()
 
     modifications = map(_ -> (dna_index(selectByR(perm.moves, rand()^move_selection_skew)), rand(1:perm_length)), 1:rand(2:num_modifications))
 
+    apply_swaps!(perm.perm, modifications)
 
-    for mod in modifications
-      mod_a, mod_b = mod
-      perm.perm[mod_a], perm.perm[mod_b] =
-        perm.perm[mod_b], perm.perm[mod_a]
-    end
-
-    eval_moves, eval_moves_hash = eval_dna_and_hash(perm.perm)
+    eval_moves, eval_moves_hash = eval_dna_and_hash!(perm.perm, eval_board, eval_possible, eval_made, eval_points_board, eval_values)
     eval_score = length(eval_moves)
 
     is_in_index = haskey(candidate.index, eval_moves_hash)
@@ -209,10 +243,10 @@ function main()
 
       push!(candidates[candidate_position].perms, new_perm)
       candidates[candidate_position].max_score = eval_score
-      candidates[candidate_position].max_moves = eval_moves
+      candidates[candidate_position].max_moves = new_perm.moves
       candidates[candidate_position].index[eval_moves_hash] = new_perm
 
-      println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
+      verbose && println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
       candidate.idle_counter = 0
       candidate.back_accept = default_back_accept
 
@@ -223,7 +257,7 @@ function main()
         new_perm = Perm(
           0,
           copy(perm.perm),
-          eval_moves,
+          copy(eval_moves),
           eval_moves_hash
         )
 
@@ -236,7 +270,7 @@ function main()
           else
             "-"
           end
-        println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
+        verbose && println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
 
         perm.visits = 0
 
@@ -246,18 +280,16 @@ function main()
           candidate.improvement_counter += 1
         end
       else
-
-        candidate.index[eval_moves_hash].perm = copy(perm.perm)
-        candidate.index[eval_moves_hash].moves = copy(eval_moves)
+        # refresh the stored perm in place (same board configuration, new dna)
+        stored = candidate.index[eval_moves_hash]
+        copyto!(stored.perm, perm.perm)
+        resize!(stored.moves, length(eval_moves))
+        copyto!(stored.moves, eval_moves)
       end
     end
 
     if eval_moves_hash != perm.moves_hash
-      for mod in reverse(modifications)
-        mod_a, mod_b = mod
-        perm.perm[mod_a], perm.perm[mod_b] =
-          perm.perm[mod_b], perm.perm[mod_a]
-      end
+      revert_swaps!(perm.perm, modifications)
     end
 
 
@@ -295,7 +327,7 @@ function main()
             end_search_candidate.max_moves = es_moves
             end_search_candidate.max_score = es_score
 
-            println("$iteration. $(es_score) -> $( end_search_candidate.max_score) ###### $(end_search_candidate.max_score)")
+            verbose && println("$iteration. $(es_score) -> $( end_search_candidate.max_score) ###### $(end_search_candidate.max_score)")
 
             end_search_candidate.idle_counter = 0
             end_search_candidate.back_accept = default_back_accept
@@ -317,7 +349,7 @@ function main()
               end_search_candidate.improvement_counter += 1
             end
 
-            println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
+            verbose && println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
           end
         end
 
@@ -326,44 +358,23 @@ function main()
 
     end
 
-    if iteration % 100000 == 0
+    if iteration % debug_interval == 0
+      should_print = verbose && iteration % print_interval == 0
       current_time = time()
       elapsed = current_time - last_debug_time
 
 
       for c in sort(candidates, by=(c -> c.max_score))
         if c.improvement_counter >= improvement_step_up
-          c.improvement_counter = 0
-          c.idle_counter = 0
-
-          c.back_accept = max(0, c.back_accept - 1)
-          filter!(c.perms) do perm
-            if length(perm.moves) < c.max_score - c.back_accept
-              delete!(c.index, perm.moves_hash)
-              # delete!(end_searched, perm.moves_hash)
-
-              # c.step_back_index[perm.moves_hash] = StepBackPack(
-              #   length(perm.moves),
-              #   perm.visits,
-              #   perm.moves,
-              #   iteration
-              # )
-
-              false  # drop it from c.perms
-            else
-              true   # keep it
-            end
-
-
-          end
+          prune_candidate!(c)
         end
 
         sort_fn =
-          if (iteration ÷ 100000) % 4 == 0
+          if (iteration ÷ debug_interval) % 4 == 0
             (p -> (-length(p.moves), p.visits))
-          elseif (iteration ÷ 100000) % 4 == 1
+          elseif (iteration ÷ debug_interval) % 4 == 1
             (p -> p.visits)
-          elseif (iteration ÷ 100000) % 4 == 2
+          elseif (iteration ÷ debug_interval) % 4 == 2
             function (p)
               score = length(p.moves)
               -(score - p.visits/(score * 1000))
@@ -384,9 +395,11 @@ function main()
 
         sort!(c.perms, by=sort_fn)
 
-        max_pack = generate_pack(c.max_moves)
+        if should_print
+          max_pack = generate_pack(c.max_moves)
 
-        println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(round(c.idle_counter, digits=1)) i:$(length(c.index)) impr:$(c.improvement_counter) $max_pack")
+          println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(round(c.idle_counter, digits=1)) i:$(length(c.index)) impr:$(c.improvement_counter) $max_pack")
+        end
 
 
 
@@ -422,12 +435,18 @@ function main()
         end
       end
 
-      last_debug_time = current_time
+      if should_print
+        last_debug_time = current_time
+      end
 
     end
 
     iteration += 1
   end
+
+  candidates
 end
 
-main()
+if abspath(PROGRAM_FILE) == @__FILE__
+  main()
+end

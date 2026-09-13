@@ -1,7 +1,7 @@
 import Base.hash
 import Base.copy
 import Base.==
-import Bits.bits
+import Base.isless
 using DataStructures
 
 #  R  XXXX
@@ -36,12 +36,12 @@ isequal(a::Move, b::Move) = move_equality(a::Move, b::Move)
 
 
 
-function hash(m::Move)
-  hash((m.x, m.y, m.start_x, m.start_y, m.direction))
+function hash(m::Move, h::UInt)
+  hash((m.x, m.y, m.start_x, m.start_y, m.direction), h)
 end
 
 function isless(a::Move, b::Move)
-  a.x < b.x || a.y < b.y || a.start_x < b.start_x || a.start_y < b.start_y || a.direction < b.direction
+  (a.x, a.y, a.start_x, a.start_y, a.direction) < (b.x, b.y, b.start_x, b.start_y, b.direction)
 end
 
 function copy(move::Move)
@@ -86,8 +86,7 @@ const direction_offset = [(1, -1) (1, 0) (1, 1) (0, 1)]
 const mask_x = 0b00001
 const mask_dir = [0b00010, 0b00100, 0b01000, 0b10000]
 
-@inline function initial_moves()
-  Move[
+const initial_moves_master = Move[
     Move(3, -1, 3, -1, 4),
     Move(6, -1, 6, -1, 4),
     Move(2, 0, 2, 0, 2),
@@ -117,6 +116,9 @@ const mask_dir = [0b00010, 0b00100, 0b01000, 0b10000]
     Move(7, 9, 3, 9, 2),
     Move(7, 7, 5, 9, 1),
   ]
+
+@inline function initial_moves()
+  copy(initial_moves_master)
 end
 
 # function generate_initial_moves()
@@ -176,7 +178,7 @@ function generate_initial_board()
   end
   board
 end
-initial_board_master = generate_initial_board();
+const initial_board_master = generate_initial_board();
 function initial_board()::Array{UInt8,1}
   copy(initial_board_master)
 end
@@ -565,44 +567,10 @@ function remove_move(moves::Array{Move,1}, possible_moves::Array{Move,1}, board:
   end
 end
 
-function test_make_and_remove_moves()
-  board = initial_board()
-  possible_moves = initial_moves()
-  made_moves = Move[]
-  board_states = []
-  moves_states = []
-
-  # Make random moves until no moves left, storing states
-  while !isempty(possible_moves)
-    move = rand(possible_moves)
-    push!(made_moves, move)
-    push!(board_states, deepcopy(board))
-    push!(moves_states, deepcopy(possible_moves))
-    make_move(board, move, possible_moves)
-  end
-
-  println("All moves made. Now removing moves one by one and checking states...")
-
-  # Remove moves one by one, compare to stored states
-  while !isempty(made_moves)
-    i = length(made_moves)
-    move = made_moves[i]
-    remove_move(made_moves, possible_moves, board, move)
-    orig_board = board_states[i]
-    orig_moves = moves_states[i]
-    board_match = board == orig_board
-    moves_match = Set(possible_moves) == Set(orig_moves)
-    println("Step $i: Board match: $board_match, Moves match: $moves_match")
-    if !board_match || !moves_match
-      println("Mismatch detected at step $i")
-    end
-  end
-end
-
 function remove_move(evaluator::MorpionEvaluator, move::Move)
 
   # remove the move from the taken moves
-  deleteat!(evaluator.morpion.moves, findfirst(evaluator.morpion.moves, move))
+  deleteat!(evaluator.morpion.moves, findfirst(m -> m == move, evaluator.morpion.moves))
 
   # add the move to the list of possible moves
   push!(evaluator.possible_moves, move)
@@ -718,23 +686,141 @@ end
 @inline function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move,1})
   @inbounds begin
     update_board(board, move)
-    filter!((move::Move) -> validate_line(board, move.start_x, move.start_y, move.direction) != (), possible_moves)
+
+    # A made move can only invalidate a candidate whose empty cell is the new
+    # point, or a same-direction collinear line within 4 steps (segment
+    # overlap / endpoint changes). Parallel lines never share cells and other
+    # directions only read their own direction bits, so everything else stays
+    # valid and skips revalidation.
+    dx, dy = direction_offset[move.direction]
+    filter!(possible_moves) do m::Move
+      if m.x == move.x && m.y == move.y
+        return false
+      end
+      if m.direction == move.direction
+        ddx = Int(m.start_x) - Int(move.start_x)
+        ddy = Int(m.start_y) - Int(move.start_y)
+        if ddx * dy == ddy * dx && max(abs(ddx), abs(ddy)) <= 4
+          return validate_line(board, m.start_x, m.start_y, m.direction) != ()
+        end
+      end
+      true
+    end
   end
 
   for direction in 1:4
     delta_x, delta_y = direction_offset[direction]
-    for offset in -4:0
-      test_x = move.x + delta_x * offset
-      test_y = move.y + delta_y * offset
 
-      position = validate_line(board, test_x, test_y, direction)
+    @inbounds begin
+      # Every accept condition in validate_line requires exactly one empty
+      # cell in the five-cell window, so count empties with a sliding window
+      # and only run the full validation on windows where that holds.
+      ecount = 0
+      for o in -4:0
+        if board[board_index(move.x + delta_x * o, move.y + delta_y * o)] == 0
+          ecount += 1
+        end
+      end
 
-      if position != ()
-        new_move = Move(position[1], position[2], test_x, test_y, direction)
+      for offset in -4:0
+        if ecount == 1
+          test_x = move.x + delta_x * offset
+          test_y = move.y + delta_y * offset
 
-        # TODO this in operation might be avoided if we use a set
-        if !in(new_move, possible_moves)
-          push!(possible_moves, new_move)
+          position = validate_line(board, test_x, test_y, direction)
+
+          if position != ()
+            new_move = Move(position[1], position[2], test_x, test_y, direction)
+
+            # TODO this in operation might be avoided if we use a set
+            if !in(new_move, possible_moves)
+              push!(possible_moves, new_move)
+            end
+          end
+        end
+
+        if offset < 0
+          # slide the window: drop the cell at `offset`, add the one at `offset+5`
+          if board[board_index(move.x + delta_x * offset, move.y + delta_y * offset)] == 0
+            ecount -= 1
+          end
+          if board[board_index(move.x + delta_x * (offset + 5), move.y + delta_y * (offset + 5))] == 0
+            ecount += 1
+          end
+        end
+      end
+    end
+  end
+end
+
+# Same as make_move above, but keeps `values` (the dna value of each entry of
+# possible_moves) in sync so move selection can scan a dense vector instead of
+# gathering dna lookups. Any rule change here must mirror the method above —
+# both are covered by the oracle tests in test/test_engine.jl.
+@inline function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move,1}, values::Vector{UInt16}, dna::Array{UInt16,1})
+  @inbounds begin
+    update_board(board, move)
+
+    dx, dy = direction_offset[move.direction]
+    n = length(possible_moves)
+    k = 0
+    for i in 1:n
+      m = possible_moves[i]
+      keep = true
+      if m.x == move.x && m.y == move.y
+        keep = false
+      elseif m.direction == move.direction
+        ddx = Int(m.start_x) - Int(move.start_x)
+        ddy = Int(m.start_y) - Int(move.start_y)
+        if ddx * dy == ddy * dx && max(abs(ddx), abs(ddy)) <= 4
+          keep = validate_line(board, m.start_x, m.start_y, m.direction) != ()
+        end
+      end
+      if keep
+        k += 1
+        possible_moves[k] = m
+        values[k] = values[i]
+      end
+    end
+    resize!(possible_moves, k)
+    resize!(values, k)
+  end
+
+  for direction in 1:4
+    delta_x, delta_y = direction_offset[direction]
+
+    @inbounds begin
+      ecount = 0
+      for o in -4:0
+        if board[board_index(move.x + delta_x * o, move.y + delta_y * o)] == 0
+          ecount += 1
+        end
+      end
+
+      for offset in -4:0
+        if ecount == 1
+          test_x = move.x + delta_x * offset
+          test_y = move.y + delta_y * offset
+
+          position = validate_line(board, test_x, test_y, direction)
+
+          if position != ()
+            new_move = Move(position[1], position[2], test_x, test_y, direction)
+
+            if !in(new_move, possible_moves)
+              push!(possible_moves, new_move)
+              push!(values, dna[dna_index(new_move)])
+            end
+          end
+        end
+
+        if offset < 0
+          if board[board_index(move.x + delta_x * offset, move.y + delta_y * offset)] == 0
+            ecount -= 1
+          end
+          if board[board_index(move.x + delta_x * (offset + 5), move.y + delta_y * (offset + 5))] == 0
+            ecount += 1
+          end
         end
       end
     end
@@ -756,7 +842,7 @@ function base64hex(char::Char)
     enc = 63
   end
 
-  bits(enc)[(end-5):end]
+  string(enc, base=2, pad=6)
 end
 
 function pack_binary(moves::Array{Move,1})
@@ -1089,6 +1175,48 @@ end
   (made_moves, hash(points_hash_board))
 end
 
+# In-place variant of eval_dna_and_hash reusing caller-owned buffers; the
+# returned moves vector aliases made_moves, so copy it before storing. `values`
+# mirrors possible_moves with each entry's dna value, letting selection scan a
+# dense vector instead of gathering dna lookups.
+@inline function eval_dna_and_hash!(dna::Array{UInt16,1},
+  board::Array{UInt8,1},
+  possible_moves::Array{Move,1},
+  made_moves::Vector{Move},
+  points_hash_board::Array{Bool,1},
+  values::Vector{UInt16})
+
+  copyto!(board, initial_board_master)
+  empty!(possible_moves)
+  append!(possible_moves, initial_moves_master)
+  empty!(made_moves)
+  fill!(points_hash_board, false)
+
+  resize!(values, length(possible_moves))
+  @inbounds for i in eachindex(possible_moves)
+    values[i] = dna[dna_index(possible_moves[i])]
+  end
+
+  @inbounds while !isempty(possible_moves)
+    best_i = 1
+    best_v = values[1]
+    for i in 2:length(values)
+      v = values[i]
+      if v > best_v
+        best_v = v
+        best_i = i
+      end
+    end
+
+    move = possible_moves[best_i]
+    push!(made_moves, move)
+    make_move(board, move, possible_moves, values, dna)
+    points_hash_board[board_index(move.x, move.y)] = true
+  end
+
+  (made_moves, hash(points_hash_board))
+end
+
 @inline function eval_dna_and_hash_optimized(dna::Array{UInt16,1})
   board = copy(initial_board_master)
   possible_moves = initial_moves()
@@ -1303,9 +1431,9 @@ function random_morpion()
   taken_moves
 end
 
-# function points_hash(morpion::Morpion)
-# 	hash(sort(map((move) -> (move.x, move.y), morpion.moves)))
-# end
+function points_hash(morpion::Morpion)
+  points_hash(morpion.moves)
+end
 
 function points_hash(moves::Array{Move,1})
   # dimitri
