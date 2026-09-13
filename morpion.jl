@@ -1064,20 +1064,19 @@ using Random
   morpion_dna = zeros(UInt16, N)  # UInt8 overflows for N this large
 
   n_moves = length(moves)
-  used_indices = Vector{Int}(undef, n_moves)
+  used = fill(false, N)
 
   @inbounds for (i, move) in enumerate(moves)
     idx = dna_index(move)
     morpion_dna[idx] = N - i + 1   # first move gets N, then N-1, ...
-    used_indices[i] = idx
+    used[idx] = true
   end
 
-  remaining_values = shuffle(1:(N-n_moves))
-  used_set = Set(used_indices)
+  remaining_values = shuffle(UInt16(1):UInt16(N - n_moves))
 
   j = 1
   @inbounds for idx in 1:N
-    if !(idx in used_set)
+    if !used[idx]
       morpion_dna[idx] = remaining_values[j]
       j += 1
     end
@@ -1436,13 +1435,16 @@ function points_hash(morpion::Morpion)
 end
 
 function points_hash(moves::Array{Move,1})
-  # dimitri
-  board = zeros(Bool, 46 * 46)
+  points_hash!(zeros(Bool, 46 * 46), moves)
+end
+
+# In-place variant: reuses a caller-owned 46*46 Bool buffer.
+function points_hash!(points_board::Array{Bool,1}, moves::Array{Move,1})
+  fill!(points_board, false)
   @inbounds for move in moves
-    board[board_index(move.x, move.y)] = true
+    points_board[board_index(move.x, move.y)] = true
   end
-  hash(board)
-  # hash(sort(map((move) -> (move.x, move.y), moves)))
+  hash(points_board)
 end
 
 function moves_and_points_hash(moves::Array{Move,1})

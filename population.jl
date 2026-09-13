@@ -42,6 +42,12 @@ function end_search(moves::Array{Move,1}, back_accept)
 
   index = Dict{UInt64,Array{Move,1}}()
 
+  # reusable per-completion buffers (contents are copied on accept)
+  eval_board = zeros(UInt8, 46 * 46)
+  eval_possible_moves = Move[]
+  eval_made_moves = Move[]
+  points_board = zeros(Bool, 46 * 46)
+
   # Progressively wind back the moves taken on a board
   for step_back in 1:floor(Int64, score*0.25)
     # Make the subset of moves on the board
@@ -64,9 +70,11 @@ function end_search(moves::Array{Move,1}, back_accept)
     # 200 best
     no_new_index_counter_cut_off = 200
     while no_new_index_counter <= no_new_index_counter_cut_off && length(index) < 1000
-      eval_board = copy(board)
-      eval_possible_moves = copy(possible_moves)
-      eval_made_moves = copy(made_moves)
+      copyto!(eval_board, board)
+      empty!(eval_possible_moves)
+      append!(eval_possible_moves, possible_moves)
+      empty!(eval_made_moves)
+      append!(eval_made_moves, made_moves)
 
       eval_move_index = move_index
 
@@ -79,12 +87,10 @@ function end_search(moves::Array{Move,1}, back_accept)
       end
 
       eval_score = length(eval_made_moves)
-      # extremely slow, must be improved (has to build the policy and then the hash, two iterations through the moves in the hot loop)
-      # _, eval_points_hash = eval_dna_and_hash_move_policy_uint64(build_move_policy(eval_made_moves))
-      eval_points_hash = points_hash(eval_made_moves)
+      eval_points_hash = points_hash!(points_board, eval_made_moves)
 
       if eval_score > score - back_accept && !haskey(index, eval_points_hash)
-        index[eval_points_hash] = eval_made_moves
+        index[eval_points_hash] = copy(eval_made_moves)
         no_new_index_counter = 0
       end
 
@@ -209,6 +215,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   eval_made = Move[]
   eval_points_board = zeros(Bool, 46 * 46)
   eval_values = UInt16[]
+  modifications = Tuple{Int,Int}[]
 
   iteration = 1
   last_debug_time = time()
@@ -224,7 +231,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     perm_score = length(perm.moves)
     perm.visits += 1
 
-    modifications = map(_ -> (dna_index(selectByR(perm.moves, rand()^move_selection_skew)), rand(1:perm_length)), 1:rand(2:num_modifications))
+    empty!(modifications)
+    for _ in 1:rand(2:num_modifications)
+      push!(modifications, (dna_index(selectByR(perm.moves, rand()^move_selection_skew)), rand(1:perm_length)))
+    end
 
     apply_swaps!(perm.perm, modifications)
 
