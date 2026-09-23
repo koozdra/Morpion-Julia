@@ -163,9 +163,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   default_back_accept::Int=10,
   selection_skew::Real=10,
   move_selection_skew::Real=1,
-  idle_reset::Int=32,
+  idle_reset::Int=64,
   idle_reset_step_back::Int=default_back_accept,
-  improvement_step_up::Int=10,
+  improvement_step_up::Int=64,
   initial_candidates_size::Int=1)
   perm_length = 46 * 46 * 4
 
