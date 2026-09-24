@@ -158,7 +158,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   verbose::Bool=true,
   # hyper-parameters (defaults are the hand-tuned values; see tune.jl for the
   # search harness that explores them)
-  num_modifications::Int=10,
+  num_modifications::Int=6,
   default_back_accept::Int=10,
   selection_skew::Real=10,
   move_selection_skew::Real=1,
