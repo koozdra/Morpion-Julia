@@ -160,7 +160,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   # search harness that explores them)
   num_modifications::Int=6,
   default_back_accept::Int=10,
-  selection_skew::Real=10,
+  selection_skew::Real=20,
   move_selection_skew::Real=1,
   idle_reset::Int=256,
   idle_reset_step_back::Int=default_back_accept,
@@ -379,26 +379,26 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         end
 
         sort_fn =
-          if (iteration ÷ debug_interval) % 4 == 0
+          if (iteration ÷ debug_interval) % 3 == 0
             (p -> (-length(p.moves), p.visits))
-          elseif (iteration ÷ debug_interval) % 4 == 1
+          elseif (iteration ÷ debug_interval) % 3 == 1
             (p -> p.visits)
-          elseif (iteration ÷ debug_interval) % 4 == 2
-            function (p)
-              score = length(p.moves)
-              -(score - p.visits/(score * 1000))
-            end
           else
             function (p)
               score = length(p.moves)
-
-              # normalization 
-              min_score = c.max_score - c.back_accept
-              normalized_score = (score - min_score) / (c.max_score - min_score + 0.0001)
-              exploitation = normalized_score
-              exploration = sqrt(2) * sqrt(log(c.visits + 1) / p.visits)
-              -(exploitation + exploration)
+              -(score - p.visits/(score * 10000))
             end
+            # else
+            #   function (p)
+            #     score = length(p.moves)
+
+            #     # normalization 
+            #     min_score = c.max_score - c.back_accept
+            #     normalized_score = (score - min_score) / (c.max_score - min_score + 0.0001)
+            #     exploitation = normalized_score
+            #     exploration = sqrt(2) * sqrt(log(c.visits + 1) / p.visits)
+            #     -(exploitation + exploration)
+            #   end
 
           end
 
