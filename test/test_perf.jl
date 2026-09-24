@@ -23,9 +23,8 @@ end
   board = zeros(UInt8, 46 * 46)
   possible = Move[]
   made = Move[]
-  phb = zeros(Bool, 46 * 46)
   values = UInt16[]
-  eval_dna_and_hash!(dna, board, possible, made, phb, values)
-  allocs2 = @allocated eval_dna_and_hash!(dna, board, possible, made, phb, values)
+  eval_dna_and_hash!(dna, board, possible, made, values)
+  allocs2 = @allocated eval_dna_and_hash!(dna, board, possible, made, values)
   @test allocs2 < 10_000
 end

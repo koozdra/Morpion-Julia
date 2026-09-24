@@ -47,7 +47,6 @@ function end_search(moves::Array{Move,1}, back_accept)
   eval_board = zeros(UInt8, 46 * 46)
   eval_possible_moves = Move[]
   eval_made_moves = Move[]
-  points_board = zeros(Bool, 46 * 46)
 
   # Progressively wind back the moves taken on a board
   for step_back in 1:floor(Int64, score*0.25)
@@ -88,7 +87,7 @@ function end_search(moves::Array{Move,1}, back_accept)
       end
 
       eval_score = length(eval_made_moves)
-      eval_points_hash = points_hash!(points_board, eval_made_moves)
+      eval_points_hash = points_hash(eval_made_moves)
 
       if eval_score > score - back_accept && !haskey(index, eval_points_hash)
         index[eval_points_hash] = copy(eval_made_moves)
@@ -214,7 +213,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   eval_board = zeros(UInt8, 46 * 46)
   eval_possible = Move[]
   eval_made = Move[]
-  eval_points_board = zeros(Bool, 46 * 46)
   eval_values = UInt16[]
   modifications = Tuple{Int,Int}[]
 
@@ -239,7 +237,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
     apply_swaps!(perm.perm, modifications)
 
-    eval_moves, eval_moves_hash = eval_dna_and_hash!(perm.perm, eval_board, eval_possible, eval_made, eval_points_board, eval_values)
+    eval_moves, eval_moves_hash = eval_dna_and_hash!(perm.perm, eval_board, eval_possible, eval_made, eval_values)
     eval_score = length(eval_moves)
 
     is_in_index = haskey(candidate.index, eval_moves_hash)

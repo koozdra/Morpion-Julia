@@ -3,6 +3,7 @@ import Base.copy
 import Base.==
 import Base.isless
 using DataStructures
+using Random
 
 #  R  XXXX
 #     X  X
@@ -71,6 +72,13 @@ end
 @inline function board_index(x::Number, y::Number)
   (x + 18) * 46 + (y + 18) + 1
 end
+
+# Zobrist keys for the points hash: one random UInt64 per board cell. A game's
+# points hash is the XOR of the keys of the cells its moves filled. Each cell is
+# filled at most once, so this identifies the point set exactly (up to 64-bit
+# collisions) and can be accumulated move by move. Fixed seed so hashes are
+# reproducible across runs; uses its own RNG so it doesn't touch the global one.
+const points_zobrist = rand(Random.Xoshiro(0x6d6f7270696f6e), UInt64, 46 * 46)
 
 
 @inline function dna_index(x::Number, y::Number, direction::Number)
@@ -1057,7 +1065,6 @@ end
   morpion_dna
 end
 
-using Random
 
 @inline function generate_dna_all(moves::Array{Move,1})
   N = 46 * 46 * 4
@@ -1146,13 +1153,7 @@ end
   board = initial_board()
   possible_moves = initial_moves()
   made_moves = Move[]
-  points_hash_board = zeros(Bool, 46 * 46)
-
-  # board = zeros(Bool, 46 * 46)
-  # @inbounds for move in moves
-  #   board[board_index(move.x, move.y)] = true
-  # end
-  # hash(board)
+  h = UInt64(0)
 
   function eval_reducer(a::Move, b::Move)
     a_value = dna[dna_index(a)]
@@ -1167,11 +1168,11 @@ end
 
       push!(made_moves, move)
       make_move(board, move, possible_moves)
-      points_hash_board[board_index(move.x, move.y)] = true
+      h ⊻= points_zobrist[board_index(move.x, move.y)]
     end
   end
 
-  (made_moves, hash(points_hash_board))
+  (made_moves, h)
 end
 
 # In-place variant of eval_dna_and_hash reusing caller-owned buffers; the
@@ -1182,14 +1183,13 @@ end
   board::Array{UInt8,1},
   possible_moves::Array{Move,1},
   made_moves::Vector{Move},
-  points_hash_board::Array{Bool,1},
   values::Vector{UInt16})
 
   copyto!(board, initial_board_master)
   empty!(possible_moves)
   append!(possible_moves, initial_moves_master)
   empty!(made_moves)
-  fill!(points_hash_board, false)
+  h = UInt64(0)
 
   resize!(values, length(possible_moves))
   @inbounds for i in eachindex(possible_moves)
@@ -1210,10 +1210,10 @@ end
     move = possible_moves[best_i]
     push!(made_moves, move)
     make_move(board, move, possible_moves, values, dna)
-    points_hash_board[board_index(move.x, move.y)] = true
+    h ⊻= points_zobrist[board_index(move.x, move.y)]
   end
 
-  (made_moves, hash(points_hash_board))
+  (made_moves, h)
 end
 
 @inline function eval_dna_and_hash_optimized(dna::Array{UInt16,1})
@@ -1221,7 +1221,7 @@ end
   possible_moves = initial_moves()
   made_moves = Vector{Move}()
   sizehint!(made_moves, 200)
-  points_hash_board = zeros(Bool, 46 * 46)
+  h = UInt64(0)
 
   @inbounds while !isempty(possible_moves)
     # Manual reduce - faster than reduce() function
@@ -1238,10 +1238,10 @@ end
 
     push!(made_moves, best_move)
     make_move(board, best_move, possible_moves)
-    points_hash_board[board_index(best_move.x, best_move.y)] = true
+    h ⊻= points_zobrist[board_index(best_move.x, best_move.y)]
   end
 
-  (made_moves, hash(points_hash_board))
+  (made_moves, h)
 end
 
 function build_move_policy(moves)
@@ -1254,7 +1254,7 @@ function eval_dna_and_hash_move_policy(move_policy::OrderedDict{Move,Int32})
   possible_moves = initial_moves()
   made_moves = Vector{Move}()
   sizehint!(made_moves, 200)
-  points_hash_board = zeros(Bool, 46 * 46)
+  h = UInt64(0)
 
   @inbounds while !isempty(possible_moves)
     # Manual reduce - faster than reduce() function
@@ -1283,10 +1283,10 @@ function eval_dna_and_hash_move_policy(move_policy::OrderedDict{Move,Int32})
 
     push!(made_moves, best_move)
     make_move(board, best_move, possible_moves)
-    points_hash_board[board_index(best_move.x, best_move.y)] = true
+    h ⊻= points_zobrist[board_index(best_move.x, best_move.y)]
   end
 
-  (made_moves, hash(points_hash_board))
+  (made_moves, h)
 end
 
 function eval_dna_and_hash_move_policy_uint64(move_policy::OrderedDict{Move,Int32})
@@ -1335,20 +1335,19 @@ function eval_dna_and_hash_move_policy_uint64(move_policy::OrderedDict{Move,Int3
     points_hash_board[int_idx] |= (UInt64(1) << bit_idx)
   end
 
-  (made_moves, hash(points_hash_board))
+  (made_moves, h)
 end
 
 function eval_dna_and_hash_move_policy!(move_policy::OrderedDict{Move,Int32},
   board::Array{UInt8,1},
   possible_moves::Array{Move,1},
-  made_moves::Vector{Move},
-  points_hash_board::Array{Bool,1})
+  made_moves::Vector{Move})
   # Clear and initialize preallocated arrays
   copyto!(board, initial_board_master)
   empty!(possible_moves)
   append!(possible_moves, initial_moves())
   empty!(made_moves)
-  fill!(points_hash_board, false)
+  h = UInt64(0)
 
   @inbounds while !isempty(possible_moves)
     # Manual reduce - faster than reduce() function
@@ -1375,10 +1374,10 @@ function eval_dna_and_hash_move_policy!(move_policy::OrderedDict{Move,Int32},
 
     push!(made_moves, best_move)
     make_move(board, best_move, possible_moves)
-    points_hash_board[board_index(best_move.x, best_move.y)] = true
+    h ⊻= points_zobrist[board_index(best_move.x, best_move.y)]
   end
 
-  (made_moves, hash(points_hash_board))
+  (made_moves, h)
 end
 
 
@@ -1435,16 +1434,11 @@ function points_hash(morpion::Morpion)
 end
 
 function points_hash(moves::Array{Move,1})
-  points_hash!(zeros(Bool, 46 * 46), moves)
-end
-
-# In-place variant: reuses a caller-owned 46*46 Bool buffer.
-function points_hash!(points_board::Array{Bool,1}, moves::Array{Move,1})
-  fill!(points_board, false)
+  h = UInt64(0)
   @inbounds for move in moves
-    points_board[board_index(move.x, move.y)] = true
+    h ⊻= points_zobrist[board_index(move.x, move.y)]
   end
-  hash(points_board)
+  h
 end
 
 function moves_and_points_hash(moves::Array{Move,1})

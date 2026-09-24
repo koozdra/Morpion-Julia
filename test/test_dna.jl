@@ -34,12 +34,11 @@ end
   board = zeros(UInt8, 46 * 46)
   possible = Move[]
   made = Move[]
-  phb = zeros(Bool, 46 * 46)
   values = UInt16[]
   for _ in 1:8
     dna = UInt16.(shuffle(rng, 1:N))
     m1, h1 = eval_dna_and_hash(dna)
-    m2, h2 = eval_dna_and_hash!(dna, board, possible, made, phb, values)
+    m2, h2 = eval_dna_and_hash!(dna, board, possible, made, values)
     @test m2 == m1
     @test h2 == h1
   end

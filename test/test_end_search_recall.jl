@@ -27,7 +27,7 @@ end
 function end_search_ref(moves::Array{Move,1}, back_accept)
   score = length(moves)
   index = Dict{UInt64,Array{Move,1}}()
-  eb = zeros(UInt8, 46 * 46); ep = Move[]; em = Move[]; pb = zeros(Bool, 46 * 46)
+  eb = zeros(UInt8, 46 * 46); ep = Move[]; em = Move[]
   for step_back in 1:floor(Int64, score * 0.25)
     board = initial_board(); possible_moves = initial_moves(); made_moves = Move[]
     for mv in moves[1:(end-step_back)]
@@ -40,7 +40,7 @@ function end_search_ref(moves::Array{Move,1}, back_accept)
       while !isempty(ep)
         r = ep[rand(1:end)]; push!(em, r); make_move(eb, r, ep)
       end
-      h = points_hash!(pb, em)
+      h = points_hash(em)
       if length(em) > score - back_accept && !haskey(index, h)
         index[h] = copy(em); nn = 0
       end
