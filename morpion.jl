@@ -691,7 +691,78 @@ function remove_move(evaluator::MorpionEvaluator, move::Move)
 
 end
 
+# Flat-index step for each direction: board_index(x + dx, y + dy) - board_index(x, y).
+const direction_step = ntuple(d -> direction_offset[d][1] * 46 + direction_offset[d][2], 4)
+
+# validate_line as a lookup table. A window's verdict depends only on the state
+# of its five cells (0 empty, 1 dot not on a line in this direction, 2 on a line
+# in this direction) and on whether the cells just before and after it are on a
+# line in this direction: 2 * 3^5 * 2 = 972 patterns. An entry is the offset
+# (0..4) of the window's empty cell when the line is playable, else -1. Built
+# from the same rules as validate_line; test/test_engine.jl checks the two agree
+# on every window of many boards.
+function build_line_table()
+  table = fill(Int8(-1), 972)
+  for before in 0:1, s0 in 0:2, s1 in 0:2, s2 in 0:2, s3 in 0:2, s4 in 0:2, after in 0:1
+    states = (s0, s1, s2, s3, s4)
+    on_line(i) = i == -1 ? before == 1 : i == 5 ? after == 1 : states[i+1] == 2
+    ce = ca = cd = 0
+    empty_offset = -1
+    index_d = 0
+    for i in 0:4
+      if states[i+1] == 0
+        ce += 1
+        empty_offset = i
+      elseif states[i+1] == 1
+        ca += 1
+      elseif on_line(i - 1) != on_line(i + 1)
+        cd += 1
+        index_d = i
+      end
+    end
+    if ce == 1 && ca == 3 && cd == 1 && (index_d == 0 || index_d == 4) ||
+       ce == 1 && ca == 4 ||
+       ce == 1 && ca == 2 && cd == 2
+      table[pattern_index(2before, s0, s1, s2, s3, s4, 2after)+1] = Int8(empty_offset)
+    end
+  end
+  table
+end
+
+@inline cell_state(value::UInt8, mask) = Int(value != 0) + Int(value & mask != 0)
+
+@inline pattern_index(before, s0, s1, s2, s3, s4, after) =
+  Int(before == 2) + 2 * (s0 + 3 * (s1 + 3 * (s2 + 3 * (s3 + 3 * s4)))) + 486 * Int(after == 2)
+
+const line_table = build_line_table()
+
+# Offset (0..4) of the empty cell if the window starting at flat index s in
+# direction d is a playable line, else -1. Same verdict as validate_line.
+@inline function line_empty(board::Array{UInt8,1}, s::Int, d::Int)
+  @inbounds begin
+    t = direction_step[d]
+    mask = mask_dir[d]
+    line_table[pattern_index(cell_state(board[s-t], mask),
+      cell_state(board[s], mask), cell_state(board[s+t], mask), cell_state(board[s+2t], mask),
+      cell_state(board[s+3t], mask), cell_state(board[s+4t], mask),
+      cell_state(board[s+5t], mask))+1]
+  end
+end
+
 @inline function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move,1})
+  make_move_impl!(board, move, possible_moves, nothing, nothing)
+end
+
+# Same as make_move above, but keeps `values` (the dna value of each entry of
+# possible_moves) in sync so move selection can scan a dense vector instead of
+# gathering dna lookups.
+@inline function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move,1}, values::Vector{UInt16}, dna::Array{UInt16,1})
+  make_move_impl!(board, move, possible_moves, values, dna)
+end
+
+# Shared body of the two methods above. `values` and `dna` are `nothing` for the
+# plain one, and those branches compile away.
+@inline function make_move_impl!(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move,1}, values, dna)
   @inbounds begin
     update_board(board, move)
 
@@ -701,78 +772,8 @@ end
     # directions only read their own direction bits, so everything else stays
     # valid and skips revalidation.
     dx, dy = direction_offset[move.direction]
-    filter!(possible_moves) do m::Move
-      if m.x == move.x && m.y == move.y
-        return false
-      end
-      if m.direction == move.direction
-        ddx = Int(m.start_x) - Int(move.start_x)
-        ddy = Int(m.start_y) - Int(move.start_y)
-        if ddx * dy == ddy * dx && max(abs(ddx), abs(ddy)) <= 4
-          return validate_line(board, m.start_x, m.start_y, m.direction) != ()
-        end
-      end
-      true
-    end
-  end
-
-  for direction in 1:4
-    delta_x, delta_y = direction_offset[direction]
-
-    @inbounds begin
-      # Every accept condition in validate_line requires exactly one empty
-      # cell in the five-cell window, so count empties with a sliding window
-      # and only run the full validation on windows where that holds.
-      ecount = 0
-      for o in -4:0
-        if board[board_index(move.x + delta_x * o, move.y + delta_y * o)] == 0
-          ecount += 1
-        end
-      end
-
-      for offset in -4:0
-        if ecount == 1
-          test_x = move.x + delta_x * offset
-          test_y = move.y + delta_y * offset
-
-          position = validate_line(board, test_x, test_y, direction)
-
-          if position != ()
-            new_move = Move(position[1], position[2], test_x, test_y, direction)
-
-            # TODO this in operation might be avoided if we use a set
-            if !in(new_move, possible_moves)
-              push!(possible_moves, new_move)
-            end
-          end
-        end
-
-        if offset < 0
-          # slide the window: drop the cell at `offset`, add the one at `offset+5`
-          if board[board_index(move.x + delta_x * offset, move.y + delta_y * offset)] == 0
-            ecount -= 1
-          end
-          if board[board_index(move.x + delta_x * (offset + 5), move.y + delta_y * (offset + 5))] == 0
-            ecount += 1
-          end
-        end
-      end
-    end
-  end
-end
-
-# Same as make_move above, but keeps `values` (the dna value of each entry of
-# possible_moves) in sync so move selection can scan a dense vector instead of
-# gathering dna lookups. Any rule change here must mirror the method above —
-# both are covered by the oracle tests in test/test_engine.jl.
-@inline function make_move(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move,1}, values::Vector{UInt16}, dna::Array{UInt16,1})
-  @inbounds begin
-    update_board(board, move)
-
-    dx, dy = direction_offset[move.direction]
-    n = length(possible_moves)
     k = 0
-    for i in 1:n
+    for i in eachindex(possible_moves)
       m = possible_moves[i]
       keep = true
       if m.x == move.x && m.y == move.y
@@ -781,54 +782,38 @@ end
         ddx = Int(m.start_x) - Int(move.start_x)
         ddy = Int(m.start_y) - Int(move.start_y)
         if ddx * dy == ddy * dx && max(abs(ddx), abs(ddy)) <= 4
-          keep = validate_line(board, m.start_x, m.start_y, m.direction) != ()
+          keep = line_empty(board, board_index(m.start_x, m.start_y), Int(m.direction)) >= 0
         end
       end
       if keep
         k += 1
         possible_moves[k] = m
-        values[k] = values[i]
+        values === nothing || (values[k] = values[i])
       end
     end
     resize!(possible_moves, k)
-    resize!(values, k)
-  end
+    values === nothing || resize!(values, k)
 
-  for direction in 1:4
-    delta_x, delta_y = direction_offset[direction]
-
-    @inbounds begin
-      ecount = 0
-      for o in -4:0
-        if board[board_index(move.x + delta_x * o, move.y + delta_y * o)] == 0
-          ecount += 1
-        end
-      end
-
-      for offset in -4:0
-        if ecount == 1
-          test_x = move.x + delta_x * offset
-          test_y = move.y + delta_y * offset
-
-          position = validate_line(board, test_x, test_y, direction)
-
-          if position != ()
-            new_move = Move(position[1], position[2], test_x, test_y, direction)
-
-            if !in(new_move, possible_moves)
-              push!(possible_moves, new_move)
-              push!(values, dna[dna_index(new_move)])
-            end
-          end
-        end
-
-        if offset < 0
-          if board[board_index(move.x + delta_x * offset, move.y + delta_y * offset)] == 0
-            ecount -= 1
-          end
-          if board[board_index(move.x + delta_x * (offset + 5), move.y + delta_y * (offset + 5))] == 0
-            ecount += 1
-          end
+    # A new line must pass through the new point, so only the 5 windows
+    # containing it in each direction can have become playable. Together they
+    # read the 11 cells p-5t .. p+5t, so load those once. Each such window held
+    # the new point as a second empty cell before this move, so it can't
+    # already be in possible_moves.
+    p = board_index(move.x, move.y)
+    for d in 1:4
+      t = direction_step[d]
+      mask = mask_dir[d]
+      delta_x, delta_y = direction_offset[d]
+      st = ntuple(j -> cell_state(board[p+(j-6)*t], mask), Val(11))
+      for back in 4:-1:0
+        j = 6 - back  # st index of the window's first cell
+        e = line_table[pattern_index(st[j-1], st[j], st[j+1], st[j+2], st[j+3], st[j+4], st[j+5])+1]
+        if e >= 0
+          start_x = move.x - back * delta_x
+          start_y = move.y - back * delta_y
+          new_move = Move(start_x + e * delta_x, start_y + e * delta_y, start_x, start_y, d)
+          push!(possible_moves, new_move)
+          values === nothing || push!(values, dna[dna_index(new_move)])
         end
       end
     end

@@ -124,6 +124,38 @@ end
   @test validate_line(board, 0, 0, 2) == (3, 0)
 end
 
+@testset "line_table lookup agrees with validate_line on every window" begin
+  # make_move validates lines through line_empty's lookup table; validate_line
+  # is the readable reference. Compare them at every in-bounds window of boards
+  # sampled throughout random games.
+  rng = MersenneTwister(97)
+  mismatches = 0
+  windows = 0
+  for game in 1:20
+    board = initial_board()
+    possible = initial_moves()
+    step = 0
+    while !isempty(possible)
+      move = possible[rand(rng, 1:length(possible))]
+      make_move(board, move, possible)
+      step += 1
+      step % 5 == 0 || continue
+      for direction in 1:4
+        dx, dy = direction_offset[direction]
+        for x in -12:21, y in -12:21
+          expected = validate_line(board, x, y, direction)
+          e = line_empty(board, board_index(x, y), direction)
+          got = e < 0 ? () : (x + dx * e, y + dy * e)
+          windows += 1
+          got == expected || (mismatches += 1)
+        end
+      end
+    end
+  end
+  @test windows > 100_000
+  @test mismatches == 0
+end
+
 @testset "incremental possible-move list matches both oracles" begin
   rng = MersenneTwister(1234)
   for game in 1:10
