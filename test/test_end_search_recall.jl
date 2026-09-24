@@ -1,13 +1,12 @@
-# Recall / soundness of population.jl's end_search against exhaustive ground
-# truth. For a fixed SOURCE game and a wind-back window, enumerate_end_search_targets
-# computes every reachable TARGET position from scratch; end_search must find
-# only real targets (soundness) and, when its node budget covers the whole tree,
-# all of them (completeness).
+# Recall / validity of population.jl's end_search against exhaustive ground
+# truth. For a fixed SOURCE game and a wind-back window,
+# enumerate_end_search_targets computes every reachable TARGET position from
+# scratch. end_search samples completions at random, so these tests check that
+# what it returns is real and that it recalls part of the ground truth, and
+# pin its behaviour to the reference implementation below.
 #
-# The exhaustive phase of end_search uses no RNG, so with a budget large enough
-# to cover the window the result is deterministic and can be compared exactly.
-# It is opt-in (node_budget > 0); the default reproduces the randomized-only
-# strategy, which end_search_ref below re-implements for comparison.
+# (An opt-in exhaustive phase, node_budget > 0, was prototyped in Sept 2026 and
+# dropped: complete coverage didn't improve final scores.)
 
 # Deterministic sources with reachable-target sets that are rich but still
 # exhaustively enumerable at MAX_STEP_BACK. Seeds 7/25/28 each expose 16
@@ -23,7 +22,7 @@ function recall_sources()
   srcs
 end
 
-# The pre-rework randomized-only strategy (what the default must reproduce).
+# Reference re-implementation of end_search's random sampling strategy.
 function end_search_ref(moves::Array{Move,1}, back_accept)
   score = length(moves)
   index = Dict{UInt64,Array{Move,1}}()
@@ -50,12 +49,11 @@ function end_search_ref(moves::Array{Move,1}, back_accept)
   index
 end
 
-@testset "default end_search (budget 0) matches pure random sampling exactly" begin
-  # The exhaustive phase is opt-in; with the default node_budget=0 end_search
-  # must reproduce the randomized-only strategy move-for-move (same RNG draws).
+@testset "end_search matches the reference random sampler exactly" begin
+  # end_search must reproduce end_search_ref move-for-move (same RNG draws).
   for (name, source) in recall_sources()
     Random.seed!(4242)
-    a = end_search(source, 5)          # default: node_budget = 0
+    a = end_search(source, 5)
     Random.seed!(4242)
     b = end_search_ref(source, 5)
     @test Set(keys(a)) == Set(keys(b))
@@ -63,53 +61,30 @@ end
   end
 end
 
-@testset "exhaustive end_search is sound and valid (subset of ground truth)" begin
+@testset "end_search results are valid, in-window, and correctly hashed" begin
   back_accept = 5
   for (name, source) in recall_sources()
-    targets, capped = enumerate_end_search_targets(source, MAX_STEP_BACK, back_accept)
-    @test !capped  # window chosen so ground truth is fully computable
-
     Random.seed!(2026)
-    results = end_search(source, back_accept;
-      max_step_back=MAX_STEP_BACK, node_budget=2_000_000)
-
-    # SOUND: never invent a position that isn't actually reachable
-    @test issubset(Set(keys(results)), targets)
-    # every returned sequence is a legal complete game, scores in-window, and
-    # its stored hash is correct
+    results = end_search(source, back_accept)
+    @test !isempty(results)
     for (h, moves) in results
       @test (verify(Morpion(moves)); true)
       @test length(moves) > length(source) - back_accept
       @test points_hash(moves) == h
-      @test h in targets
     end
   end
 end
 
-@testset "exhaustive end_search is complete when the budget covers the window" begin
+@testset "end_search recalls reachable ground-truth targets" begin
+  # end_search winds back further than MAX_STEP_BACK, so it can also return
+  # positions outside the enumerated window; only check it finds targets
+  # inside it.
   back_accept = 5
   for (name, source) in recall_sources()
     targets, capped = enumerate_end_search_targets(source, MAX_STEP_BACK, back_accept)
     @test !capped
-
-    # a budget larger than the whole tree ⇒ phase 1 covers everything ⇒
-    # end_search must find every reachable target, and no more
     Random.seed!(2026)
-    results = end_search(source, back_accept;
-      max_step_back=MAX_STEP_BACK, node_budget=2_000_000)
-    @test Set(keys(results)) == targets
-    # ...so it recalls at least as much as the random sampler
-    Random.seed!(7)
-    rand_hits = length(intersect(Set(keys(end_search_ref(source, back_accept))), targets))
-    @test length(targets) >= rand_hits
+    results = end_search(source, back_accept)
+    @test !isempty(intersect(Set(keys(results)), targets))
   end
-end
-
-@testset "exhaustive phase is deterministic (no RNG dependence)" begin
-  source = random_game(MersenneTwister(7))[2]
-  Random.seed!(1)
-  a = end_search(source, 5; max_step_back=MAX_STEP_BACK, node_budget=2_000_000)
-  Random.seed!(999)  # different seed must not change a budget-covered result
-  b = end_search(source, 5; max_step_back=MAX_STEP_BACK, node_budget=2_000_000)
-  @test Set(keys(a)) == Set(keys(b))
 end
