@@ -160,7 +160,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   # search harness that explores them)
   num_modifications::Int=6,
   default_back_accept::Int=10,
-  selection_skew::Real=20,
+  selection_skew::Real=10,
   move_selection_skew::Real=1,
   idle_reset::Int=256,
   idle_reset_step_back::Int=default_back_accept,
