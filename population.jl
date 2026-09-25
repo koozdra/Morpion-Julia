@@ -160,12 +160,12 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   # hyper-parameters (defaults are the hand-tuned values; see tune.jl for the
   # search harness that explores them)
   num_modifications::Int=6,
-  default_back_accept::Int=10,
+  default_back_accept::Int=1,
   selection_skew::Real=10,
   move_selection_skew::Real=1,
-  idle_reset::Int=32,
+  idle_reset::Int=8,
   idle_reset_step_back::Int=default_back_accept,
-  improvement_step_up::Int=32,
+  improvement_step_up::Int=1,
   initial_candidates_size::Int=1)
   perm_length = 46 * 46 * 4
 
