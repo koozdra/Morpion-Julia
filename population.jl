@@ -1,5 +1,6 @@
 # 166 HYhAHqWtBWCUVGkZRRxasI/rdT+39uUf9d22ap+y7/fX7/3+
 # 170 EykgD3IyGWSDsFAhMXIsPeav6+ju7V07eqfruddfv/nfO///6
+# 170 Ey0gDuBpwaSCtRHDsNrbIXYUQ//n9ev7Ivz3VX37/5/rf//9
 # 170 qiQRjpmQsgU2CKFJbAAfUVaF5deL//zru/vbens3yfr31z+/trw
 # 171 F0wgDolGsg5l0kkIno6jbiovx31/l5b3v42y8je9dvt2d//vvQ
 # 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
@@ -162,9 +163,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   default_back_accept::Int=10,
   selection_skew::Real=10,
   move_selection_skew::Real=1,
-  idle_reset::Int=256,
+  idle_reset::Int=32,
   idle_reset_step_back::Int=default_back_accept,
-  improvement_step_up::Int=128,
+  improvement_step_up::Int=32,
   initial_candidates_size::Int=1)
   perm_length = 46 * 46 * 4
 
