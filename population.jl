@@ -380,15 +380,16 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         end
 
         sort_fn =
-          if (iteration ÷ debug_interval) % 3 == 0
+          if (iteration ÷ debug_interval) % 2 == 0
             (p -> (-length(p.moves), p.visits))
-          elseif (iteration ÷ debug_interval) % 3 == 1
-            (p -> p.visits)
           else
-            function (p)
-              score = length(p.moves)
-              -(score - p.visits/(score * 10000))
-            end
+            (iteration ÷ debug_interval) % 2 == 1
+            (p -> p.visits)
+            # else
+            #   function (p)
+            #     score = length(p.moves)
+            #     -(score - p.visits/(score * 10000))
+            #   end
             # else
             #   function (p)
             #     score = length(p.moves)
