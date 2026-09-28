@@ -159,13 +159,13 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   verbose::Bool=true,
   # hyper-parameters (defaults are the hand-tuned values; see tune.jl for the
   # search harness that explores them)
-  num_modifications::Int=6,
+  num_modifications::Int=10,
   default_back_accept::Int=3,
   selection_skew::Real=10,
   move_selection_skew::Real=1,
   idle_reset::Int=64,
   idle_reset_step_back::Int=default_back_accept,
-  improvement_step_up::Int=10,
+  improvement_step_up::Int=20,
   initial_candidates_size::Int=1)
   perm_length = 46 * 46 * 4
 
