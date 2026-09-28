@@ -166,7 +166,8 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   idle_reset::Int=64,
   idle_reset_step_back::Int=default_back_accept,
   improvement_step_up::Int=20,
-  initial_candidates_size::Int=1)
+  initial_candidates_size::Int=1,
+  initial_perms_size::Int=100)
   perm_length = 46 * 46 * 4
 
   candidates = Candidate[]
@@ -181,27 +182,36 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
 
   for i in 1:initial_candidates_size
+    # seed each candidate with initial_perms_size random perms (duplicate board
+    # configurations are dropped), best first
+    perms = Perm[]
+    index = Dict{UInt64,Perm}()
+    for _ in 1:initial_perms_size
+      perm = UInt16.(1:perm_length)
+      shuffle!(perm)
+      perm_moves, perm_moves_hash = eval_dna_and_hash(perm)
+      haskey(index, perm_moves_hash) && continue
 
-    perm = UInt16.(1:perm_length)
-    shuffle!(perm)
-    perm_moves, perm_moves_hash = eval_dna_and_hash(perm)
-    perm_score = length(perm_moves)
-
-    new_perm = Perm(
-      0,
-      perm,
-      perm_moves,
-      perm_moves_hash
-    )
+      new_perm = Perm(
+        0,
+        perm,
+        perm_moves,
+        perm_moves_hash
+      )
+      push!(perms, new_perm)
+      index[perm_moves_hash] = new_perm
+    end
+    sort!(perms, by=p -> -length(p.moves))
+    best = perms[1]
 
     push!(candidates,
       Candidate(
         0,
-        [new_perm],
-        Dict(perm_moves_hash => new_perm),
+        perms,
+        index,
         Dict{UInt64,StepBackPack}(),
-        perm_moves,
-        perm_score,
+        best.moves,
+        length(best.moves),
         default_back_accept,
         0,
         0
