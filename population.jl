@@ -39,7 +39,12 @@ function revert_swaps!(perm::Vector{UInt16}, swaps)
   perm
 end
 
-function end_search(moves::Array{Move,1}, back_accept)
+# Winds back the last 1..step_back_fraction*score moves of `moves` and samples
+# random completions from each prefix, until stall_cut_off completions in a row
+# add nothing new (or index_cap results are collected). Returns every distinct
+# completion scoring above score - back_accept, keyed by points hash.
+function end_search(moves::Array{Move,1}, back_accept;
+  step_back_fraction::Real=0.25, stall_cut_off::Int=200, index_cap::Int=1000)
   score = length(moves)
 
   index = Dict{UInt64,Array{Move,1}}()
@@ -50,7 +55,7 @@ function end_search(moves::Array{Move,1}, back_accept)
   eval_made_moves = Move[]
 
   # Progressively wind back the moves taken on a board
-  for step_back in 1:floor(Int64, score*0.25)
+  for step_back in 1:floor(Int64, score*step_back_fraction)
     # Make the subset of moves on the board
     # move_policy = OrderedDict{Move,Int32}()
     board = initial_board()
@@ -68,9 +73,7 @@ function end_search(moves::Array{Move,1}, back_accept)
     # Perform a random completion from where the moves left off
     # Keep track of new configurations found and reset search timer if a new one is found
     no_new_index_counter = 0
-    # 200 best
-    no_new_index_counter_cut_off = 200
-    while no_new_index_counter <= no_new_index_counter_cut_off && length(index) < 1000
+    while no_new_index_counter <= stall_cut_off && length(index) < index_cap
       copyto!(eval_board, board)
       empty!(eval_possible_moves)
       append!(eval_possible_moves, possible_moves)
@@ -97,6 +100,107 @@ function end_search(moves::Array{Move,1}, back_accept)
 
       no_new_index_counter += 1
     end
+  end
+
+  index
+end
+
+# One random completion from a checkpoint (board, possible moves, points hash of
+# the moves so far). Leaves the completion's own moves in `suffix` and returns
+# the points hash of the whole game.
+function ucb_completion!(board, possible_moves, suffix, from_board, from_possible, h::UInt64)
+  copyto!(board, from_board)
+  empty!(possible_moves)
+  append!(possible_moves, from_possible)
+  empty!(suffix)
+  while !isempty(possible_moves)
+    move = possible_moves[rand(1:end)]
+    push!(suffix, move)
+    make_move(board, move, possible_moves)
+    h ⊻= points_zobrist[board_index(move.x, move.y)]
+  end
+  h
+end
+
+# end_search variant that treats each wind-back depth as a bandit arm. The game
+# is replayed once, keeping the position before each of its last
+# step_back_fraction*score moves; one pull of an arm is one random completion
+# from that position, rewarded when it finds a new point set scoring above
+# score - back_accept. Arms are picked by UCB1 on reward per pull, so rollouts
+# go to the depths that are still turning up new completions instead of a
+# fixed stall per depth. Stops once stall_rollouts average completions' worth of
+# moves in a row find nothing new (or index_cap results are collected).
+# Returns the same kind of index as end_search.
+function end_search_ucb(moves::Array{Move,1}, back_accept;
+  step_back_fraction::Real=0.25, stall_rollouts::Int=2000, index_cap::Int=1000,
+  exploration::Real=0.1, warmup::Int=2)
+  score = length(moves)
+  depth = floor(Int, score * step_back_fraction)
+  index = Dict{UInt64,Array{Move,1}}()
+  depth < 1 && return index
+
+  # checkpoint k: the position before the last k moves, and its points hash
+  boards = Vector{Vector{UInt8}}(undef, depth)
+  possibles = Vector{Vector{Move}}(undef, depth)
+  prefix_hashes = zeros(UInt64, depth)
+  board = initial_board()
+  possible_moves = initial_moves()
+  h = UInt64(0)
+  for (i, move) in enumerate(moves)
+    k = score - i + 1
+    if k <= depth
+      boards[k] = copy(board)
+      possibles[k] = copy(possible_moves)
+      prefix_hashes[k] = h
+    end
+    make_move(board, move, possible_moves)
+    h ⊻= points_zobrist[board_index(move.x, move.y)]
+  end
+
+  rewards = zeros(Int, depth)
+  pulls = zeros(Int, depth)
+  # per arm, kept current as it is pulled: mean reward and 1/sqrt(pulls)
+  means = zeros(depth)
+  inv_sqrt_pulls = zeros(depth)
+  total_pulls = 0
+  total_moves = 0
+  moves_since_new = 0
+
+  eval_board = zeros(UInt8, 46 * 46)
+  eval_possible_moves = Move[]
+  eval_suffix = Move[]
+
+  k = 0
+  while true
+    if total_pulls < warmup * depth
+      k = total_pulls % depth + 1
+    else
+      (length(index) < index_cap &&
+       moves_since_new < stall_rollouts * total_moves / total_pulls) || break
+      bonus = exploration * sqrt(log(total_pulls))
+      best_value = -Inf
+      for a in 1:depth
+        value = means[a] + bonus * inv_sqrt_pulls[a]
+        if value > best_value
+          best_value = value
+          k = a
+        end
+      end
+    end
+
+    h = ucb_completion!(eval_board, eval_possible_moves, eval_suffix,
+      boards[k], possibles[k], prefix_hashes[k])
+    played = length(eval_suffix)
+    found = score - k + played > score - back_accept && !haskey(index, h)
+    found && (index[h] = vcat(moves[1:score-k], eval_suffix))
+
+    rewards[k] += found
+    pulls[k] += 1
+    means[k] = rewards[k] / pulls[k]
+    inv_sqrt_pulls[k] = 1 / sqrt(pulls[k])
+    total_pulls += 1
+    total_moves += played
+    moves_since_new = found ? 0 : moves_since_new + played
   end
 
   index
@@ -282,10 +386,19 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   idle_reset_step_back::Int=default_back_accept,
   improvement_step_up::Int=20,
   initial_candidates_size::Int=1,
+  # end_search wind-back depth (fraction of the source's score) and how many
+  # fruitless completions in a row end each wind-back step
+  es_step_back_fraction::Real=0.25,
+  es_stall_cut_off::Int=200,
+  # :ucb (end_search_ucb, which stops after es_ucb_stall_rollouts) or
+  # :sequential (the original end_search, which uses es_stall_cut_off)
+  es_mode::Symbol=:ucb,
+  es_ucb_stall_rollouts::Int=2000,
   initial_perms_size::Int=100,
   # rollouts resume from a checkpoint of the parent's game every this many
   # moves (0 = always replay from the start; results are identical either way)
   checkpoint_interval::Int=4)
+  es_mode in (:sequential, :ucb) || throw(ArgumentError("es_mode must be :sequential or :ucb, got $es_mode"))
   perm_length = 46 * 46 * 4
 
   candidates = Candidate[]
@@ -495,7 +608,13 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
       if !haskey(end_searched, best.moves_hash)
 
-        results = end_search(best.moves, 5)
+        results = if es_mode === :ucb
+          end_search_ucb(best.moves, 5;
+            step_back_fraction=es_step_back_fraction, stall_rollouts=es_ucb_stall_rollouts)
+        else
+          end_search(best.moves, 5;
+            step_back_fraction=es_step_back_fraction, stall_cut_off=es_stall_cut_off)
+        end
         es_max_before = end_search_candidate.max_score
         es_accepted = 0
         es_best = 0

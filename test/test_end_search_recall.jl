@@ -88,3 +88,40 @@ end
     @test !isempty(intersect(Set(keys(results)), targets))
   end
 end
+
+@testset "end_search_ucb results are valid, in-window, and inside the ground truth" begin
+  back_accept = 5
+  for (name, source) in recall_sources()
+    Random.seed!(2027)
+    results = end_search_ucb(source, back_accept)
+    @test !isempty(results)
+    targets, capped = enumerate_end_search_targets(source, MAX_STEP_BACK, back_accept)
+    @test !isempty(intersect(Set(keys(results)), targets))
+    for (h, moves) in results
+      @test (verify(Morpion(moves)); true)
+      @test length(moves) > length(source) - back_accept
+      @test points_hash(moves) == h
+    end
+  end
+end
+
+@testset "end_search_ucb finds every target over the whole window of mature games" begin
+  # these games' full wind-back windows are small enough to enumerate exactly
+  back_accept = 5
+  for i in (6, 15)
+    source = unpack_pack(GOLDEN_PACKS[i][2]).moves
+    targets, capped = enumerate_end_search_targets(source, floor(Int, length(source) * 0.25), back_accept)
+    @test !capped
+    Random.seed!(99)
+    @test Set(keys(end_search_ucb(source, back_accept))) == targets
+  end
+end
+
+@testset "main() runs with the UCB end_search" begin
+  Random.seed!(5)
+  c = main(max_iterations=3000, end_search_interval=500, debug_interval=1000,
+    verbose=false, initial_perms_size=10, es_mode=:ucb)[1]
+  @test (verify(Morpion(c.max_moves)); true)
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, es_mode=:bogus)
+end
