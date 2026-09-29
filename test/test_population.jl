@@ -97,3 +97,14 @@ end
   end
   @test maximum(length(p.moves) for p in c.perms) == c.max_score
 end
+
+@testset "checkpointed main() reproduces the uncheckpointed search exactly" begin
+  runs = map((0, 8, 3)) do interval
+    Random.seed!(11)
+    c = main(max_iterations=20_000, end_search_interval=3000, debug_interval=1000,
+      verbose=false, initial_perms_size=10, checkpoint_interval=interval)[1]
+    (c.max_score, c.max_moves, [p.moves_hash for p in c.perms], [p.perm for p in c.perms])
+  end
+  @test runs[2] == runs[1]
+  @test runs[3] == runs[1]
+end

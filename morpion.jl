@@ -761,7 +761,10 @@ end
 end
 
 # Shared body of the two methods above. `values` and `dna` are `nothing` for the
-# plain one, and those branches compile away.
+# plain one, and those branches compile away. Returns how many of the previous
+# candidates survived: possible_moves[k+1:end] are the moves this one made
+# playable. A segment that stops being playable never becomes playable again,
+# so every move enters possible_moves at most once per game.
 @inline function make_move_impl!(board::Array{UInt8,1}, move::Move, possible_moves::Array{Move,1}, values, dna)
   @inbounds begin
     update_board(board, move)
@@ -818,6 +821,7 @@ end
       end
     end
   end
+  k
 end
 
 function base64hex(char::Char)
@@ -1176,6 +1180,19 @@ end
   empty!(made_moves)
   h = UInt64(0)
 
+  rollout_from!(dna, board, possible_moves, made_moves, values, h)
+end
+
+# Plays dna greedily from the given position (board, possible_moves, the moves
+# made so far and their points hash) to the end of the game. Refills `values`
+# from possible_moves first.
+@inline function rollout_from!(dna::Array{UInt16,1},
+  board::Array{UInt8,1},
+  possible_moves::Array{Move,1},
+  made_moves::Vector{Move},
+  values::Vector{UInt16},
+  h::UInt64)
+
   resize!(values, length(possible_moves))
   @inbounds for i in eachindex(possible_moves)
     values[i] = dna[dna_index(possible_moves[i])]
@@ -1199,6 +1216,308 @@ end
   end
 
   (made_moves, h)
+end
+
+# Checkpointed evaluation. A child dna differs from its parent's in a few
+# entries, and its game replays the parent's move for move until a changed entry
+# wins a selection it lost before, or the parent's move loses one it won (see
+# restart_step). An EvalCache holds what that test needs about the parent's game
+# (when each dna index became legal and was played, the value of each chosen
+# move) plus the position every `interval` steps, so the child's rollout can
+# resume from the last checkpoint at or before that step instead of from the
+# initial position.
+mutable struct EvalCache
+  valid::Bool
+  interval::Int
+  moves::Vector{Move}             # the game the checkpoints belong to
+  hash::UInt64                    # its points hash
+  first_legal::Vector{Int16}      # step at which each dna index first became legal (0 = never)
+  entries::Vector{Int32}          # dna indices in order of first becoming legal
+  entry_start::Vector{Int32}      # entries[entry_start[s]:entry_start[s+1]-1] became legal at step s
+  play_step::Vector{Int16}        # step at which each dna index was played (0 = never)
+  chosen::Vector{UInt16}          # chosen[s]: the parent dna's value for moves[s]
+  boards::Vector{Vector{UInt8}}   # checkpoint j is the position before move (j-1)*interval + 1
+  possible::Vector{Vector{Move}}
+  hashes::Vector{UInt64}
+  count::Int                      # checkpoints in use (the vectors above are reused buffers)
+  # first_legal/entries are complete for steps <= known, and every checkpoint
+  # due at or before `known` exists. known > length(moves) once the whole game
+  # is covered; less after the parent adopted a reordered game (see
+  # retarget_eval_cache!), until child rollouts fill the rest back in.
+  known::Int
+end
+
+EvalCache(interval::Int) = EvalCache(false, interval, Move[], UInt64(0), zeros(Int16, 46 * 46 * 4),
+  Int32[], Int32[], zeros(Int16, 46 * 46 * 4), UInt16[], Vector{UInt8}[], Vector{Move}[], UInt64[], 0, 0)
+
+# Re-reads the chosen-move values after the parent's dna changed without
+# changing its game.
+function refresh_eval_cache_values!(cache::EvalCache, dna::Array{UInt16,1})
+  resize!(cache.chosen, length(cache.moves))
+  @inbounds for s in eachindex(cache.moves)
+    cache.chosen[s] = dna[dna_index(cache.moves[s])]
+  end
+  cache
+end
+
+# Points play_step at `moves` from step `from` on, after clearing the entries
+# of the previous game's moves from that step on.
+function set_play_steps!(cache::EvalCache, moves::Vector{Move}, from::Int)
+  @inbounds for s in from:length(cache.moves)
+    cache.play_step[dna_index(cache.moves[s])] = 0
+  end
+  @inbounds for s in from:length(moves)
+    cache.play_step[dna_index(moves[s])] = s
+  end
+end
+
+# Records that possible_moves[from:end] first became legal at `step`.
+@inline function record_entries!(cache::EvalCache, possible_moves::Vector{Move}, from::Int, step::Int)
+  resize!(cache.entry_start, step)
+  cache.entry_start[step] = length(cache.entries) + 1
+  @inbounds for t in from:length(possible_moves)
+    i = dna_index(possible_moves[t])
+    cache.first_legal[i] = step
+    push!(cache.entries, i)
+  end
+end
+
+# Stores the position before move `step` as a checkpoint if one is due.
+@inline function record_checkpoint!(cache::EvalCache, step::Int, board::Vector{UInt8},
+  possible_moves::Vector{Move}, h::UInt64)
+  (step - 1) % cache.interval == 0 || return
+  j = cache.count += 1
+  if j > length(cache.boards)
+    push!(cache.boards, copy(board))
+    push!(cache.possible, copy(possible_moves))
+    push!(cache.hashes, h)
+  else
+    copyto!(cache.boards[j], board)
+    empty!(cache.possible[j])
+    append!(cache.possible[j], possible_moves)
+    cache.hashes[j] = h
+  end
+end
+
+# Full rollout of dna that also (re)fills the cache for its game. Same result as
+# eval_dna_and_hash!.
+function build_eval_cache!(cache::EvalCache, dna::Array{UInt16,1},
+  board::Array{UInt8,1},
+  possible_moves::Array{Move,1},
+  made_moves::Vector{Move},
+  values::Vector{UInt16})
+
+  copyto!(board, initial_board_master)
+  empty!(possible_moves)
+  append!(possible_moves, initial_moves_master)
+  empty!(made_moves)
+  h = UInt64(0)
+  fill!(cache.first_legal, 0)
+  empty!(cache.entries)
+  cache.count = 0
+  record_entries!(cache, possible_moves, 1, 1)
+
+  step = 1
+  @inbounds while !isempty(possible_moves)
+    record_checkpoint!(cache, step, board, possible_moves, h)
+
+    best_i = 1
+    best_v = dna[dna_index(possible_moves[1])]
+    for i in 2:length(possible_moves)
+      v = dna[dna_index(possible_moves[i])]
+      if v > best_v
+        best_v = v
+        best_i = i
+      end
+    end
+
+    move = possible_moves[best_i]
+    push!(made_moves, move)
+    k = make_move(board, move, possible_moves)
+    h ⊻= points_zobrist[board_index(move.x, move.y)]
+    step += 1
+    record_entries!(cache, possible_moves, k + 1, step)
+  end
+
+  set_play_steps!(cache, made_moves, 1)
+  resize!(cache.moves, length(made_moves))
+  copyto!(cache.moves, made_moves)
+  refresh_eval_cache_values!(cache, dna)
+  cache.hash = h
+  cache.known = step
+  cache.valid = true
+  (made_moves, h)
+end
+
+# Re-points a valid cache at `moves`, the game of the parent's new `dna`, which
+# shares a prefix with the cached game (the parent adopted a child dna playing
+# the same points in another order). Keeps what the cache knows up to the last
+# checkpoint at or before the first differing move and forgets the rest;
+# rollout_heal! fills it back in as later children replay the new game.
+function retarget_eval_cache!(cache::EvalCache, dna::Array{UInt16,1}, moves::Vector{Move}, h::UInt64)
+  old = cache.moves
+  d = 1
+  n = min(length(old), length(moves))
+  @inbounds while d <= n && old[d] == moves[d]
+    d += 1
+  end
+
+  j = min((d - 1) ÷ cache.interval + 1, cache.count)
+  start = (j - 1) * cache.interval + 1
+  if start < cache.known
+    @inbounds if start + 1 <= length(cache.entry_start)
+      e = cache.entry_start[start+1]
+      for t in e:length(cache.entries)
+        cache.first_legal[cache.entries[t]] = 0
+      end
+      resize!(cache.entries, e - 1)
+    end
+    resize!(cache.entry_start, start)
+    cache.known = start
+    cache.count = j
+  end
+
+  set_play_steps!(cache, moves, start)
+  resize!(cache.moves, length(moves))
+  copyto!(cache.moves, moves)
+  refresh_eval_cache_values!(cache, dna)
+  cache.hash = h
+  cache
+end
+
+# rollout_from! for a child whose restart step lies past what the cache knows
+# about the parent's game (`step` is the checkpoint it resumes from). While the
+# child keeps playing the parent's moves beyond `known`, the parent's
+# first-legal steps and checkpoints are recorded on the way.
+function rollout_heal!(dna::Array{UInt16,1}, cache::EvalCache,
+  board::Array{UInt8,1},
+  possible_moves::Array{Move,1},
+  made_moves::Vector{Move},
+  values::Vector{UInt16},
+  h::UInt64,
+  step::Int)
+
+  resize!(values, length(possible_moves))
+  @inbounds for i in eachindex(possible_moves)
+    values[i] = dna[dna_index(possible_moves[i])]
+  end
+
+  shadow = true
+  @inbounds while !isempty(possible_moves)
+    best_i = 1
+    best_v = values[1]
+    for i in 2:length(values)
+      v = values[i]
+      if v > best_v
+        best_v = v
+        best_i = i
+      end
+    end
+
+    move = possible_moves[best_i]
+    push!(made_moves, move)
+    k = make_move(board, move, possible_moves, values, dna)
+    h ⊻= points_zobrist[board_index(move.x, move.y)]
+    if shadow
+      if move != cache.moves[step]
+        shadow = false
+      elseif step == cache.known
+        record_entries!(cache, possible_moves, k + 1, step + 1)
+        cache.known = step + 1
+        # like build_eval_cache!, no checkpoint for the finished position
+        isempty(possible_moves) || record_checkpoint!(cache, step + 1, board, possible_moves, h)
+      end
+    end
+    step += 1
+  end
+
+  (made_moves, h)
+end
+
+# First step at which the game of `dna` with `swaps` applied can differ from
+# the cached game of `dna` itself; 0 if it can't differ at all. Call it before
+# applying the swaps. Let V[s] be the parent's value for its move at step s. The
+# child makes the same choice at s unless a changed entry legal at s now beats
+# V[s], or the parent's move at s is itself changed and lost value. So for each
+# changed index i with old value o and new value n:
+#   - played at p with n < o: it may lose at p (earlier it lost anyway);
+#   - otherwise, the first step s from when it became legal until it was played
+#     (or the end of the game) with n > V[s].
+# Values are distinct (dna is a permutation), so a tie can only be the swap
+# partner's own old value, which the lost-value case already catches. While the
+# cache only knows first-legal steps up to `known`, an index not seen by then is
+# assumed legal from known + 1 on.
+function restart_step(cache::EvalCache, dna::Array{UInt16,1}, swaps,
+  idx::Vector{Int}, newv::Vector{UInt16})
+
+  # the changed indices and their values after the swaps
+  empty!(idx)
+  empty!(newv)
+  @inbounds for (a, b) in swaps
+    ia = findfirst(==(a), idx)
+    ia === nothing && (push!(idx, a); push!(newv, dna[a]); ia = length(idx))
+    ib = findfirst(==(b), idx)
+    ib === nothing && (push!(idx, b); push!(newv, dna[b]); ib = length(idx))
+    newv[ia], newv[ib] = newv[ib], newv[ia]
+  end
+
+  r = typemax(Int)
+  chosen = cache.chosen
+  complete = cache.known > length(cache.moves)
+  @inbounds for t in eachindex(idx)
+    i = idx[t]
+    n = newv[t]
+    o = dna[i]
+    n == o && continue
+    fl = Int(cache.first_legal[i])
+    if fl == 0
+      complete && continue  # never legal
+      fl = cache.known + 1
+    end
+    fl >= r && continue
+    p = Int(cache.play_step[i])
+    if p > 0 && n < o
+      p < r && (r = p)
+    else
+      last = p > 0 ? p - 1 : length(chosen)
+      for s in fl:min(last, r - 1)
+        if n > chosen[s]
+          r = s
+          break
+        end
+      end
+    end
+  end
+  r == typemax(Int) ? 0 : r
+end
+
+# Evaluates `dna`, a child of the dna the cache was built for, given
+# r = restart_step(...) for its swaps. Same result as eval_dna_and_hash!(dna,
+# ...); the returned moves alias made_moves.
+function eval_dna_and_hash_cached!(dna::Array{UInt16,1}, cache::EvalCache, r::Int,
+  board::Array{UInt8,1},
+  possible_moves::Array{Move,1},
+  made_moves::Vector{Move},
+  values::Vector{UInt16})
+
+  if r == 0
+    resize!(made_moves, length(cache.moves))
+    copyto!(made_moves, cache.moves)
+    return (made_moves, cache.hash)
+  end
+
+  j = min((r - 1) ÷ cache.interval + 1, cache.count)
+  start = (j - 1) * cache.interval + 1
+  copyto!(board, cache.boards[j])
+  empty!(possible_moves)
+  append!(possible_moves, cache.possible[j])
+  resize!(made_moves, start - 1)
+  copyto!(made_moves, 1, cache.moves, 1, start - 1)
+  if r > cache.known
+    rollout_heal!(dna, cache, board, possible_moves, made_moves, values, cache.hashes[j], start)
+  else
+    rollout_from!(dna, board, possible_moves, made_moves, values, cache.hashes[j])
+  end
 end
 
 @inline function eval_dna_and_hash_optimized(dna::Array{UInt16,1})

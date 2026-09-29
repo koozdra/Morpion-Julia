@@ -108,7 +108,13 @@ mutable struct Perm
   # TODO: remove moves, not using it for anything
   moves::Vector{Move}
   moves_hash::UInt64
+  # checkpoints of the game `perm` plays, built lazily when the perm is first
+  # used as a parent; `valid` is cleared whenever `perm` changes to a dna whose
+  # game differs
+  cache::Union{Nothing,EvalCache}
 end
+
+Perm(visits, perm, moves, moves_hash) = Perm(visits, perm, moves, moves_hash, nothing)
 
 struct StepBackPack
   score::Int
@@ -149,7 +155,116 @@ function prune_candidate!(c::Candidate)
   c
 end
 
+# Optional instrumentation for main(; stats=SearchStats()). One row per rollout
+# (column vectors) plus section timings, end_search outcomes and per-maintenance
+# snapshots. Costs roughly one extra parent replay per distinct parent, so only
+# pass it for analysis runs.
+const OUTCOME_NOOP = Int8(0)     # child game identical to the parent's
+const OUTCOME_REJECT = Int8(1)   # below the acceptance window
+const OUTCOME_REVISIT = Int8(2)  # in the window but already in the index
+const OUTCOME_ACCEPT = Int8(3)   # new perm added to the pool
+const OUTCOME_BEST = Int8(4)     # new candidate max_score
+
+mutable struct SearchStats
+  # per rollout
+  iteration::Vector{Int32}
+  seconds::Vector{Float32}
+  parent_pos::Vector{Int16}    # index of the parent in candidate.perms
+  pool_size::Vector{Int16}
+  parent_score::Vector{Int16}
+  max_score::Vector{Int16}
+  back_accept::Vector{Int16}
+  num_swaps::Vector{Int8}
+  swap_pos_min::Vector{Int16}  # earliest parent-game position of a swapped move
+  restart::Vector{Int16}       # first step a swapped dna index is legal in the parent game (0 = never)
+  diverge::Vector{Int16}       # first step the child game differs (0 = identical)
+  eval_score::Vector{Int16}
+  outcome::Vector{Int8}
+  # section timings (ns); eval_ns includes checkpoint cache builds
+  eval_ns::Int
+  cache_builds::Int
+  cache_retargets::Int
+  end_search_ns::Int
+  maintenance_ns::Int
+  # end_search: (iteration, source score, max_score, results, best result, accepted, new best)
+  end_searches::Vector{NTuple{7,Int}}
+  # maintenance snapshots: (iteration, seconds, candidate, max_score, back_accept, pool size, perms at max, distinct scores)
+  snapshots::Vector{NTuple{8,Float64}}
+  # parent game -> step at which each dna index first became legal (0 = never)
+  legal_cache::Dict{UInt64,Vector{Int16}}
+  # rejected rollouts are only recorded when iteration % reject_sample == 0
+  # (weight them by reject_sample); every other outcome is always recorded
+  reject_sample::Int
+end
+
+SearchStats(; reject_sample::Int=1) = SearchStats(Int32[], Float32[], Int16[], Int16[], Int16[],
+  Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[], 0, 0, 0, 0, 0,
+  NTuple{7,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(), reject_sample)
+
+# Step (1-based) at which each dna index first appears among the possible moves
+# while replaying `moves`; 0 if it never does.
+function first_legal_steps(moves::Vector{Move})
+  first_legal = zeros(Int16, 46 * 46 * 4)
+  board = initial_board()
+  possible = initial_moves()
+  for (step, move) in enumerate(moves)
+    for m in possible
+      i = dna_index(m)
+      first_legal[i] == 0 && (first_legal[i] = step)
+    end
+    make_move(board, move, possible)
+  end
+  first_legal
+end
+
+function record_rollout!(s::SearchStats, t0, iteration, parent, parent_pos, candidate,
+  max_score, back_accept, modifications, eval_moves, outcome)
+  key = hash(parent.moves)
+  first_legal = get!(() -> first_legal_steps(parent.moves), s.legal_cache, key)
+  length(s.legal_cache) > 5000 && empty!(s.legal_cache)
+
+  restart = typemax(Int16)
+  for (a, b) in modifications, i in (a, b)
+    first_legal[i] > 0 && (restart = min(restart, first_legal[i]))
+  end
+  restart == typemax(Int16) && (restart = 0)
+
+  swap_pos_min = typemax(Int16)
+  for (a, _) in modifications
+    p = findfirst(m -> dna_index(m) == a, parent.moves)
+    p === nothing || (swap_pos_min = min(swap_pos_min, p))
+  end
+
+  diverge = 0
+  n = min(length(eval_moves), length(parent.moves))
+  for i in 1:n
+    if eval_moves[i] != parent.moves[i]
+      diverge = i
+      break
+    end
+  end
+  diverge == 0 && length(eval_moves) != length(parent.moves) && (diverge = n + 1)
+
+  push!(s.iteration, iteration)
+  push!(s.seconds, time() - t0)
+  push!(s.parent_pos, parent_pos)
+  push!(s.pool_size, length(candidate.perms))
+  push!(s.parent_score, length(parent.moves))
+  push!(s.max_score, max_score)
+  push!(s.back_accept, back_accept)
+  push!(s.num_swaps, length(modifications))
+  push!(s.swap_pos_min, swap_pos_min)
+  push!(s.restart, restart)
+  push!(s.diverge, diverge)
+  push!(s.eval_score, length(eval_moves))
+  # rejects keep their label so the reject_sample weighting stays correct
+  push!(s.outcome, diverge == 0 && outcome != OUTCOME_REJECT ? OUTCOME_NOOP : outcome)
+  s
+end
+
 function main(; max_iterations::Union{Nothing,Int}=nothing,
+  max_seconds::Union{Nothing,Real}=nothing,
+  stats::Union{Nothing,SearchStats}=nothing,
   end_search_interval::Int=10000,
   # maintenance (perm re-sorting, pruning, idle bookkeeping) runs every
   # debug_interval iterations; the progress line prints every print_interval
@@ -167,7 +282,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   idle_reset_step_back::Int=default_back_accept,
   improvement_step_up::Int=20,
   initial_candidates_size::Int=1,
-  initial_perms_size::Int=100)
+  initial_perms_size::Int=100,
+  # rollouts resume from a checkpoint of the parent's game every this many
+  # moves (0 = always replay from the start; results are identical either way)
+  checkpoint_interval::Int=4)
   perm_length = 46 * 46 * 4
 
   candidates = Candidate[]
@@ -226,30 +344,61 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   eval_made = Move[]
   eval_values = UInt16[]
   modifications = Tuple{Int,Int}[]
+  restart_idx = Int[]
+  restart_newv = UInt16[]
+  restart = 0
 
   iteration = 1
-  last_debug_time = time()
+  start_time = time()
+  last_debug_time = start_time
 
   while max_iterations === nothing || iteration <= max_iterations
+    if max_seconds !== nothing && iteration % 1000 == 0 && time() - start_time >= max_seconds
+      break
+    end
     candidate_position = (iteration % length(candidates)) + 1
     candidate = candidates[candidate_position]
 
     candidate.visits += 1
 
     # weighted
-    perm = selectByR(candidate.perms, rand()^selection_skew)
+    perm_pos = floor(Int, rand()^selection_skew * length(candidate.perms)) + 1
+    perm = candidate.perms[perm_pos]
     perm_score = length(perm.moves)
+    stats === nothing || (stats_parent = (moves=copy(perm.moves),))  # refresh may overwrite perm.moves
     perm.visits += 1
+
+    stats === nothing || (eval_t0 = time_ns())
+    if checkpoint_interval > 0
+      perm.cache === nothing && (perm.cache = EvalCache(checkpoint_interval))
+      if !perm.cache.valid
+        build_eval_cache!(perm.cache, perm.perm, eval_board, eval_possible, eval_made, eval_values)
+        stats === nothing || (stats.cache_builds += 1)
+      end
+    end
 
     empty!(modifications)
     for _ in 1:rand(2:num_modifications)
       push!(modifications, (dna_index(selectByR(perm.moves, rand()^move_selection_skew)), rand(1:perm_length)))
     end
 
+    checkpoint_interval > 0 &&
+      (restart = restart_step(perm.cache, perm.perm, modifications, restart_idx, restart_newv))
     apply_swaps!(perm.perm, modifications)
 
-    eval_moves, eval_moves_hash = eval_dna_and_hash!(perm.perm, eval_board, eval_possible, eval_made, eval_values)
+    if checkpoint_interval > 0
+      eval_moves, eval_moves_hash = eval_dna_and_hash_cached!(perm.perm, perm.cache, restart,
+        eval_board, eval_possible, eval_made, eval_values)
+    else
+      eval_moves, eval_moves_hash = eval_dna_and_hash!(perm.perm, eval_board, eval_possible, eval_made, eval_values)
+    end
     eval_score = length(eval_moves)
+    if stats !== nothing
+      stats.eval_ns += time_ns() - eval_t0
+      stats_max_score = candidate.max_score
+      stats_back_accept = candidate.back_accept
+      stats_outcome = OUTCOME_REJECT
+    end
 
     is_in_index = haskey(candidate.index, eval_moves_hash)
 
@@ -267,6 +416,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
       candidates[candidate_position].index[eval_moves_hash] = new_perm
 
       verbose && println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
+      stats === nothing || (stats_outcome = OUTCOME_BEST)
       candidate.idle_counter = 0
       candidate.back_accept = default_back_accept
 
@@ -283,6 +433,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
         candidate.index[eval_moves_hash] = new_perm
         push!(candidate.perms, new_perm)
+        stats === nothing || (stats_outcome = OUTCOME_ACCEPT)
 
         arrow_symbol =
           if eval_score > perm_score
@@ -300,20 +451,38 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
           candidate.improvement_counter += 1
         end
       else
+        stats === nothing || (stats_outcome = OUTCOME_REVISIT)
         # refresh the stored perm in place (same board configuration, new dna)
         stored = candidate.index[eval_moves_hash]
+        # the parent's own cache is checked below, where its dna is kept
+        stored !== perm && stored.cache !== nothing && (stored.cache.valid = false)
         copyto!(stored.perm, perm.perm)
         resize!(stored.moves, length(eval_moves))
         copyto!(stored.moves, eval_moves)
       end
     end
 
+    if stats !== nothing && (stats_outcome != OUTCOME_REJECT || iteration % stats.reject_sample == 0)
+      record_rollout!(stats, start_time, iteration, stats_parent, perm_pos, candidate,
+        stats_max_score, stats_back_accept, modifications, eval_moves, stats_outcome)
+    end
+
     if eval_moves_hash != perm.moves_hash
       revert_swaps!(perm.perm, modifications)
+    elseif perm.cache !== nothing && perm.cache.valid
+      # the parent keeps the child dna: its game is the child's, which may play
+      # the same points in a different order
+      if eval_moves != perm.cache.moves
+        retarget_eval_cache!(perm.cache, perm.perm, eval_moves, eval_moves_hash)
+        stats === nothing || (stats.cache_retargets += 1)
+      else
+        refresh_eval_cache_values!(perm.cache, perm.perm)
+      end
     end
 
 
     if iteration % end_search_interval == 0
+      stats === nothing || (es_t0 = time_ns())
       end_search_candidate = rand(candidates)
       best = argmax(end_search_candidate.perms) do p
         is_end_searched = haskey(end_searched, p.moves_hash)
@@ -327,6 +496,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
       if !haskey(end_searched, best.moves_hash)
 
         results = end_search(best.moves, 5)
+        es_max_before = end_search_candidate.max_score
+        es_accepted = 0
+        es_best = 0
 
         for (es_moves_hash, es_moves) in sort(collect(results), by=x -> length(x[2]))
           es_score = length(es_moves)
@@ -351,6 +523,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
             end_search_candidate.idle_counter = 0
             end_search_candidate.back_accept = default_back_accept
+            es_best += 1
 
           elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !is_in_index
             new_perm = Perm(
@@ -361,7 +534,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             )
             push!(end_search_candidate.perms, new_perm)
             end_search_candidate.index[es_moves_hash] = new_perm
-
+            es_accepted += 1
 
             end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
             if es_score > (end_search_candidate.max_score - end_search_candidate.back_accept)
@@ -374,11 +547,18 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         end
 
         end_searched[best.moves_hash] = true
+
+        if stats !== nothing
+          push!(stats.end_searches, (iteration, length(best.moves), es_max_before, length(results),
+            isempty(results) ? 0 : maximum(length, values(results)), es_accepted, es_best))
+        end
       end
+      stats === nothing || (stats.end_search_ns += time_ns() - es_t0)
 
     end
 
     if iteration % debug_interval == 0
+      stats === nothing || (maint_t0 = time_ns())
       should_print = verbose && iteration % print_interval == 0
       current_time = time()
       elapsed = current_time - last_debug_time
@@ -458,6 +638,15 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
       if should_print
         last_debug_time = current_time
+      end
+
+      if stats !== nothing
+        stats.maintenance_ns += time_ns() - maint_t0
+        for (ci, c) in enumerate(candidates)
+          scores = [length(p.moves) for p in c.perms]
+          push!(stats.snapshots, (iteration, time() - start_time, ci, c.max_score, c.back_accept,
+            length(c.perms), count(==(c.max_score), scores), length(unique(scores))))
+        end
       end
 
     end
