@@ -382,9 +382,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   default_back_accept::Int=10,
   selection_skew::Real=10,
   move_selection_skew::Real=1,
-  idle_reset::Int=16,
+  idle_reset::Int=512,
   idle_reset_step_back::Int=default_back_accept,
-  improvement_step_up::Int=20,
+  improvement_step_up::Int=10000,
   initial_candidates_size::Int=1,
   # end_search wind-back depth (fraction of the source's score) and how many
   # fruitless completions in a row end each wind-back step
@@ -692,7 +692,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
           if (iteration ÷ debug_interval) % 2 == 0
             (p -> (-length(p.moves), p.visits))
           else
-            (iteration ÷ debug_interval) % 2 == 1
+            # (iteration ÷ debug_interval) % 2 == 1
             (p -> p.visits)
             # else
             #   function (p)
