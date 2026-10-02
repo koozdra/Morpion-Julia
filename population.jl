@@ -241,19 +241,10 @@ end
 
 Perm(visits, perm, moves, moves_hash) = Perm(visits, perm, moves, moves_hash, nothing, 0, -1)
 
-struct StepBackPack
-  score::Int
-  visits::Int
-  moves::Vector{Move}
-  iteration_created::Int
-end
-
-
 mutable struct Candidate
   visits::Int
   perms::Vector{Perm}
   index::Dict{UInt64,Perm}
-  step_back_index::Dict{UInt64,StepBackPack}
   max_moves::Vector{Move}
   max_score::Int
   back_accept::Int
@@ -322,11 +313,15 @@ mutable struct SearchStats
   # rejected rollouts are only recorded when iteration % reject_sample == 0
   # (weight them by reject_sample); every other outcome is always recorded
   reject_sample::Int
+  # false skips the per-rollout rows entirely (they grow by one row per
+  # non-rejected rollout, ~330 MB over a 30-minute run), keeping only the
+  # timings, end_search records and snapshots
+  rows::Bool
 end
 
-SearchStats(; reject_sample::Int=1) = SearchStats(Int32[], Float32[], Int32[], Int32[], UInt64[], Int32[], Int16[],
+SearchStats(; reject_sample::Int=1, rows::Bool=true) = SearchStats(Int32[], Float32[], Int32[], Int32[], UInt64[], Int32[], Int16[],
   Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[], 0, 0, 0, 0, 0,
-  NTuple{7,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(), reject_sample)
+  NTuple{7,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(), reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
 # while replaying `moves`; 0 if it never does.
@@ -448,11 +443,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
   candidates = Candidate[]
 
-  step_back_index_prune_size = 300_000
-  step_back_index_prune_target_size = Int(step_back_index_prune_size * 0.66)
-
-  score_multiplier = 2
-
   end_searched = Dict{UInt64,Bool}()
 
 
@@ -485,7 +475,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         0,
         perms,
         index,
-        Dict{UInt64,StepBackPack}(),
         best.moves,
         length(best.moves),
         default_back_accept,
@@ -526,7 +515,8 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     perm_pos = floor(Int, rand()^selection_skew * length(candidate.perms)) + 1
     perm = candidate.perms[perm_pos]
     perm_score = length(perm.moves)
-    stats === nothing || (stats_parent = (moves=copy(perm.moves), visits=perm.visits, hash=perm.moves_hash))  # refresh may overwrite perm.moves
+    stats !== nothing && stats.rows &&
+      (stats_parent = (moves=copy(perm.moves), visits=perm.visits, hash=perm.moves_hash))  # refresh may overwrite perm.moves
     perm.visits += 1
 
     stats === nothing || (eval_t0 = time_ns())
@@ -636,7 +626,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
       end
     end
 
-    if stats !== nothing && (stats_outcome != OUTCOME_REJECT || iteration % stats.reject_sample == 0)
+    if stats !== nothing && stats.rows && (stats_outcome != OUTCOME_REJECT || iteration % stats.reject_sample == 0)
       record_rollout!(stats, start_time, iteration, stats_parent, perm_pos, candidate,
         stats_max_score, stats_back_accept, modifications, eval_moves, stats_outcome)
     end
@@ -808,29 +798,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
           c.improvement_counter = 0
           c.idle_counter = 0
           c.back_accept += idle_reset_step_back
-
-          filter!(c.step_back_index) do (key, sbp)
-
-            is_in_index = haskey(c.index, key)
-            age = iteration - sbp.iteration_created
-
-            if ! is_in_index && sbp.score >= (c.max_score - c.back_accept)
-              m = sbp.moves
-              h = points_hash(m)
-              new_perm = Perm(
-                sbp.visits,
-                moves_only ? UInt16[] : generate_dna_all(m),
-                m,
-                h
-              )
-              push!(c.perms, new_perm)
-              c.index[h] = new_perm
-            end
-
-            false
-          end
-
-          empty!(c.step_back_index)
         end
       end
 

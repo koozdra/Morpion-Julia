@@ -28,3 +28,15 @@ end
   allocs2 = @allocated eval_dna_and_hash!(dna, board, possible, made, values)
   @test allocs2 < 10_000
 end
+
+@testset "main's loop variables are not boxed" begin
+  # A closure inside main that assigns a name main also uses (or that captures a
+  # variable main reassigns) makes Julia box it; that once made the whole loop
+  # type-unstable and cost ~9% speed and ~570 bytes of garbage per iteration.
+  body = Base.bodyfunction(which(Core.kwcall, Tuple{NamedTuple,typeof(main)}))
+  m = first(methods(body))
+  argtypes = map(T -> isconcretetype(T) ? T : Any, fieldtypes(m.sig)[2:end])
+  ci, _ = code_typed(body, Tuple{argtypes...}; optimize=false)[1]
+  boxed = [n for (n, T) in zip(ci.slotnames, ci.slottypes) if T isa Type && T <: Core.Box]
+  @test isempty(boxed)
+end

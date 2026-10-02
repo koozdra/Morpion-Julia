@@ -54,7 +54,7 @@ end
     index[h] = p
   end
   max_score, best_i = findmax(p -> length(p.moves), perms)
-  c = Candidate(0, perms, index, Dict{UInt64,StepBackPack}(),
+  c = Candidate(0, perms, index,
     perms[best_i].moves, max_score, 3, 5.0, 50)
 
   prune_candidate!(c)
@@ -157,4 +157,24 @@ end
     @test eval_dna_and_hash(dna_from_moves!(dna, base, p.moves, p.moves_hash))[1] == p.moves
   end
   @test_throws ArgumentError main(max_iterations=10, verbose=false, dna_storage=:bogus)
+end
+
+@testset "SearchStats(rows=false) keeps only the summaries and doesn't change the search" begin
+  runs = map((nothing, SearchStats(rows=false), SearchStats(reject_sample=10))) do st
+    Random.seed!(14)
+    c = main(max_iterations=20_000, end_search_interval=2000, debug_interval=1000,
+      verbose=false, initial_perms_size=10, stats=st)[1]
+    (c.max_moves, [p.moves_hash for p in c.perms])
+  end
+  @test runs[2] == runs[1]
+  @test runs[3] == runs[1]
+
+  s = SearchStats(rows=false)
+  Random.seed!(14)
+  main(max_iterations=20_000, end_search_interval=2000, debug_interval=1000,
+    verbose=false, initial_perms_size=10, stats=s)
+  @test isempty(s.outcome) && isempty(s.iteration)
+  @test length(s.snapshots) == 20
+  @test !isempty(s.end_searches)
+  @test s.eval_ns > 0
 end
