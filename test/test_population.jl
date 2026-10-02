@@ -102,9 +102,59 @@ end
   runs = map((0, 8, 3)) do interval
     Random.seed!(11)
     c = main(max_iterations=20_000, end_search_interval=3000, debug_interval=1000,
-      verbose=false, initial_perms_size=10, checkpoint_interval=interval)[1]
+      verbose=false, initial_perms_size=10, checkpoint_interval=interval, dna_storage=:full)[1]
     (c.max_score, c.max_moves, [p.moves_hash for p in c.perms], [p.perm for p in c.perms])
   end
   @test runs[2] == runs[1]
   @test runs[3] == runs[1]
+end
+
+@testset "releasing idle checkpoint caches doesn't change the search" begin
+  runs = map((false, true)) do release
+    Random.seed!(12)
+    cs = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
+      print_interval=1000, verbose=false, initial_perms_size=10, release_idle_caches=release,
+      dna_storage=:full)
+    c = cs[1]
+    cached = count(p -> p.cache !== nothing, c.perms)
+    (sig=(c.max_score, c.max_moves, [p.moves_hash for p in c.perms], [p.perm for p in c.perms]),
+      cached=cached, pool=length(c.perms))
+  end
+  @test runs[2].sig == runs[1].sig
+  # without release every perm that was ever a parent keeps its cache
+  @test runs[2].cached < runs[1].cached
+end
+
+@testset "dna_from_moves! rebuilds a dna that replays the game" begin
+  rng = MersenneTwister(21)
+  N = 46 * 46 * 4
+  base = shuffle(rng, UInt16(1):UInt16(N))
+  dna = zeros(UInt16, N)
+  games = [random_game(rng)[2] for _ in 1:10]
+  append!(games, [unpack_pack(p[2]).moves for p in GOLDEN_PACKS[[1, 6, 15]]])
+  for moves in games
+    h = points_hash(moves)
+    dna_from_moves!(dna, base, moves, h)
+    @test allunique(dna)
+    replayed, rh = eval_dna_and_hash(dna)
+    @test replayed == moves
+    @test rh == h
+  end
+end
+
+@testset "main() with moves-only dna storage" begin
+  Random.seed!(13)
+  c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
+    verbose=false, initial_perms_size=10, dna_storage=:moves)[1]
+  @test all(p -> isempty(p.perm) && p.cache === nothing, c.perms)
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  @test maximum(length(p.moves) for p in c.perms) == c.max_score
+  base = shuffle(MersenneTwister(1), UInt16(1):UInt16(46 * 46 * 4))
+  dna = zeros(UInt16, length(base))
+  for p in c.perms[1:min(end, 50)]
+    @test points_hash(p.moves) == p.moves_hash
+    @test (verify(Morpion(p.moves)); true)
+    @test eval_dna_and_hash(dna_from_moves!(dna, base, p.moves, p.moves_hash))[1] == p.moves
+  end
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, dna_storage=:bogus)
 end

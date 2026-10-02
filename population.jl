@@ -5,6 +5,7 @@
 # 171 F0wgDolGsg5l0kkIno6jbiovx31/l5b3v42y8je9dvt2d//vvQ
 # 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
 # 172 AENMhclbKcGxHhKhtGnBJdfX1DeJf7L6X+vt09fU7/Ptcv//va
+# 172 UkiDTozaJmq4Mi4JQpJhYu3LPXzf7Tbzf1eV7+rOrb99//udfg
 # 175 KyQihtyDUKLaq0EcpmqsRa/XuYvfN79c9T0t356/9+23fb5y/U
 # 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
 # 177 AYOOj1VpKGCndhSsQa1s+k3ft/usr69mLd/Su+3f+7Z9/+3u4
@@ -206,19 +207,39 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
   index
 end
 
+# DNA for a perm stored as moves only (main's dna_storage=:moves), written into
+# `dna`: a fixed random base permutation rotated by the perm's points hash (so
+# perms don't all share one ordering of their unplayed moves), with the played
+# moves given the highest values in game order, so the greedy rollout replays
+# `moves` exactly.
+function dna_from_moves!(dna::Vector{UInt16}, base::Vector{UInt16}, moves::Vector{Move}, h::UInt64)
+  N = length(base)
+  r = Int(h % UInt64(N))
+  copyto!(dna, 1, base, r + 1, N - r)
+  copyto!(dna, N - r + 1, base, 1, r)
+  L = length(moves)
+  @inbounds for (i, m) in enumerate(moves)
+    dna[dna_index(m)] = UInt16(N + L - i + 1)
+  end
+  dna
+end
+
 mutable struct Perm
   visits::Int
   perm::Vector{UInt16}
   # TODO: remove moves, not using it for anything
   moves::Vector{Move}
   moves_hash::UInt64
-  # checkpoints of the game `perm` plays, built lazily when the perm is first
-  # used as a parent; `valid` is cleared whenever `perm` changes to a dna whose
-  # game differs
+  # checkpoints of the game `perm` plays, built once the perm has been picked
+  # cache_min_picks times in the current print interval; `valid` is cleared
+  # whenever `perm` changes to a dna whose game differs
   cache::Union{Nothing,EvalCache}
+  # picks in the current print interval (`pick_window` = iteration ÷ print_interval)
+  window_picks::Int
+  pick_window::Int
 end
 
-Perm(visits, perm, moves, moves_hash) = Perm(visits, perm, moves, moves_hash, nothing)
+Perm(visits, perm, moves, moves_hash) = Perm(visits, perm, moves, moves_hash, nothing, 0, -1)
 
 struct StepBackPack
   score::Int
@@ -273,8 +294,10 @@ mutable struct SearchStats
   # per rollout
   iteration::Vector{Int32}
   seconds::Vector{Float32}
-  parent_pos::Vector{Int16}    # index of the parent in candidate.perms
-  pool_size::Vector{Int16}
+  parent_pos::Vector{Int32}    # index of the parent in candidate.perms
+  parent_visits::Vector{Int32} # parent's picks since it last produced an accepted child (before this one)
+  parent_hash::Vector{UInt64}  # parent's points hash (identifies the configuration picked)
+  pool_size::Vector{Int32}
   parent_score::Vector{Int16}
   max_score::Vector{Int16}
   back_accept::Vector{Int16}
@@ -301,7 +324,7 @@ mutable struct SearchStats
   reject_sample::Int
 end
 
-SearchStats(; reject_sample::Int=1) = SearchStats(Int32[], Float32[], Int16[], Int16[], Int16[],
+SearchStats(; reject_sample::Int=1) = SearchStats(Int32[], Float32[], Int32[], Int32[], UInt64[], Int32[], Int16[],
   Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[], 0, 0, 0, 0, 0,
   NTuple{7,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(), reject_sample)
 
@@ -352,6 +375,8 @@ function record_rollout!(s::SearchStats, t0, iteration, parent, parent_pos, cand
   push!(s.iteration, iteration)
   push!(s.seconds, time() - t0)
   push!(s.parent_pos, parent_pos)
+  push!(s.parent_visits, parent.visits)
+  push!(s.parent_hash, parent.hash)
   push!(s.pool_size, length(candidate.perms))
   push!(s.parent_score, length(parent.moves))
   push!(s.max_score, max_score)
@@ -397,9 +422,29 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   initial_perms_size::Int=100,
   # rollouts resume from a checkpoint of the parent's game every this many
   # moves (0 = always replay from the start; results are identical either way)
-  checkpoint_interval::Int=4)
+  checkpoint_interval::Int=4,
+  # every print_interval iterations, drop the checkpoint caches of perms that
+  # weren't picked as a parent since the last cleanup (~94 KB each); a perm
+  # picked again rebuilds its cache, so results are unchanged
+  release_idle_caches::Bool=true,
+  # a perm only gets a checkpoint cache from its cache_min_picks-th pick within
+  # a print interval on; a cache costs ~1.4 rollouts to build and saves ~18%
+  # of each later rollout, so caching rarely picked perms wastes time and memory
+  cache_min_picks::Int=8,
+  # :moves keeps only each perm's moves and rebuilds a dna from them when it is
+  # picked (see dna_from_moves!; ~30x less pool memory, no checkpoint caches);
+  # :full keeps every perm's evolved dna (16.6 KB each). checkpoint_interval,
+  # release_idle_caches and cache_min_picks only apply to :full
+  dna_storage::Symbol=:moves)
   es_mode in (:sequential, :ucb) || throw(ArgumentError("es_mode must be :sequential or :ucb, got $es_mode"))
+  dna_storage in (:full, :moves) || throw(ArgumentError("dna_storage must be :full or :moves, got $dna_storage"))
   perm_length = 46 * 46 * 4
+  moves_only = dna_storage === :moves
+  # with moves_only, pool perms store no dna; the picked perm's dna is rebuilt
+  # into dna_buf
+  dna_base = moves_only ? shuffle(UInt16(1):UInt16(perm_length)) : UInt16[]
+  dna_buf = zeros(UInt16, moves_only ? perm_length : 0)
+  stored_dna(dna) = moves_only ? UInt16[] : copy(dna)
 
   candidates = Candidate[]
 
@@ -425,7 +470,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
       new_perm = Perm(
         0,
-        perm,
+        moves_only ? UInt16[] : perm,
         perm_moves,
         perm_moves_hash
       )
@@ -460,6 +505,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
   restart_idx = Int[]
   restart_newv = UInt16[]
   restart = 0
+  # released caches, reused before allocating new ones
+  spare_caches = EvalCache[]
+  max_spare_caches = 64
 
   iteration = 1
   start_time = time()
@@ -478,12 +526,25 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     perm_pos = floor(Int, rand()^selection_skew * length(candidate.perms)) + 1
     perm = candidate.perms[perm_pos]
     perm_score = length(perm.moves)
-    stats === nothing || (stats_parent = (moves=copy(perm.moves),))  # refresh may overwrite perm.moves
+    stats === nothing || (stats_parent = (moves=copy(perm.moves), visits=perm.visits, hash=perm.moves_hash))  # refresh may overwrite perm.moves
     perm.visits += 1
 
     stats === nothing || (eval_t0 = time_ns())
-    if checkpoint_interval > 0
-      perm.cache === nothing && (perm.cache = EvalCache(checkpoint_interval))
+    window = iteration ÷ print_interval
+    if perm.pick_window != window
+      perm.pick_window = window
+      perm.window_picks = 0
+    end
+    perm.window_picks += 1
+    use_cache = checkpoint_interval > 0 && !moves_only &&
+                (perm.cache !== nothing || perm.window_picks >= cache_min_picks)
+    dna = moves_only ? dna_from_moves!(dna_buf, dna_base, perm.moves, perm.moves_hash) : perm.perm
+
+    if use_cache
+      if perm.cache === nothing
+        perm.cache = isempty(spare_caches) ? EvalCache(checkpoint_interval) : pop!(spare_caches)
+      end
+      perm.cache.last_used = iteration
       if !perm.cache.valid
         build_eval_cache!(perm.cache, perm.perm, eval_board, eval_possible, eval_made, eval_values)
         stats === nothing || (stats.cache_builds += 1)
@@ -495,15 +556,15 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
       push!(modifications, (dna_index(selectByR(perm.moves, rand()^move_selection_skew)), rand(1:perm_length)))
     end
 
-    checkpoint_interval > 0 &&
-      (restart = restart_step(perm.cache, perm.perm, modifications, restart_idx, restart_newv))
-    apply_swaps!(perm.perm, modifications)
+    use_cache &&
+      (restart = restart_step(perm.cache, dna, modifications, restart_idx, restart_newv))
+    apply_swaps!(dna, modifications)
 
-    if checkpoint_interval > 0
-      eval_moves, eval_moves_hash = eval_dna_and_hash_cached!(perm.perm, perm.cache, restart,
+    if use_cache
+      eval_moves, eval_moves_hash = eval_dna_and_hash_cached!(dna, perm.cache, restart,
         eval_board, eval_possible, eval_made, eval_values)
     else
-      eval_moves, eval_moves_hash = eval_dna_and_hash!(perm.perm, eval_board, eval_possible, eval_made, eval_values)
+      eval_moves, eval_moves_hash = eval_dna_and_hash!(dna, eval_board, eval_possible, eval_made, eval_values)
     end
     eval_score = length(eval_moves)
     if stats !== nothing
@@ -518,7 +579,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     if eval_score > candidate.max_score
       new_perm = Perm(
         0,
-        copy(perm.perm),
+        stored_dna(dna),
         copy(eval_moves),
         eval_moves_hash
       )
@@ -539,7 +600,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
       if !is_in_index
         new_perm = Perm(
           0,
-          copy(perm.perm),
+          stored_dna(dna),
           copy(eval_moves),
           eval_moves_hash
         )
@@ -569,7 +630,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         stored = candidate.index[eval_moves_hash]
         # the parent's own cache is checked below, where its dna is kept
         stored !== perm && stored.cache !== nothing && (stored.cache.valid = false)
-        copyto!(stored.perm, perm.perm)
+        moves_only || copyto!(stored.perm, dna)
         resize!(stored.moves, length(eval_moves))
         copyto!(stored.moves, eval_moves)
       end
@@ -581,7 +642,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     end
 
     if eval_moves_hash != perm.moves_hash
-      revert_swaps!(perm.perm, modifications)
+      moves_only || revert_swaps!(dna, modifications)
     elseif perm.cache !== nothing && perm.cache.valid
       # the parent keeps the child dna: its game is the child's, which may play
       # the same points in a different order
@@ -628,7 +689,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             end_search_candidate.visits = 0
             new_perm = Perm(
               0,
-              generate_dna_all(es_moves),
+              moves_only ? UInt16[] : generate_dna_all(es_moves),
               es_moves,
               es_moves_hash
             )
@@ -647,7 +708,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
           elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !is_in_index
             new_perm = Perm(
               0,
-              generate_dna_all(es_moves),
+              moves_only ? UInt16[] : generate_dna_all(es_moves),
               es_moves,
               es_moves_hash
             )
@@ -679,6 +740,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     if iteration % debug_interval == 0
       stats === nothing || (maint_t0 = time_ns())
       should_print = verbose && iteration % print_interval == 0
+      release_caches = release_idle_caches && checkpoint_interval > 0 && iteration % print_interval == 0
       current_time = time()
       elapsed = current_time - last_debug_time
 
@@ -715,6 +777,23 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
         sort!(c.perms, by=sort_fn)
 
+        if release_caches
+          released = 0
+          cached = 0
+          for p in c.perms
+            p.cache === nothing && continue
+            if p.cache.last_used <= iteration - print_interval
+              p.cache.valid = false
+              length(spare_caches) < max_spare_caches && push!(spare_caches, p.cache)
+              p.cache = nothing
+              released += 1
+            else
+              cached += 1
+            end
+          end
+          should_print && println("$iteration. released $released idle checkpoint caches, $cached still cached, pool $(length(c.perms))")
+        end
+
         if should_print
           max_pack = generate_pack(c.max_moves)
 
@@ -740,7 +819,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
               h = points_hash(m)
               new_perm = Perm(
                 sbp.visits,
-                generate_dna_all(m),
+                moves_only ? UInt16[] : generate_dna_all(m),
                 m,
                 h
               )

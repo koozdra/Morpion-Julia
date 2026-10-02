@@ -1245,10 +1245,13 @@ mutable struct EvalCache
   # is covered; less after the parent adopted a reordered game (see
   # retarget_eval_cache!), until child rollouts fill the rest back in.
   known::Int
+  # iteration at which the cache last served a rollout, so idle caches can be
+  # released (see main's release_idle_caches)
+  last_used::Int
 end
 
 EvalCache(interval::Int) = EvalCache(false, interval, Move[], UInt64(0), zeros(Int16, 46 * 46 * 4),
-  Int32[], Int32[], zeros(Int16, 46 * 46 * 4), UInt16[], Vector{UInt8}[], Vector{Move}[], UInt64[], 0, 0)
+  Int32[], Int32[], zeros(Int16, 46 * 46 * 4), UInt16[], Vector{UInt8}[], Vector{Move}[], UInt64[], 0, 0, 0)
 
 # Re-reads the chosen-move values after the parent's dna changed without
 # changing its game.
