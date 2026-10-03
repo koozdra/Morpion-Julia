@@ -306,6 +306,9 @@ mutable struct SearchStats
   maintenance_ns::Int
   # end_search: (iteration, source score, max_score, results, best result, accepted, new best)
   end_searches::Vector{NTuple{7,Int}}
+  # source game of each end_search call (same order), when keep_es_sources
+  es_sources::Vector{Vector{Move}}
+  keep_es_sources::Bool
   # maintenance snapshots: (iteration, seconds, candidate, max_score, back_accept, pool size, perms at max, distinct scores)
   snapshots::Vector{NTuple{8,Float64}}
   # parent game -> step at which each dna index first became legal (0 = never)
@@ -319,9 +322,10 @@ mutable struct SearchStats
   rows::Bool
 end
 
-SearchStats(; reject_sample::Int=1, rows::Bool=true) = SearchStats(Int32[], Float32[], Int32[], Int32[], UInt64[], Int32[], Int16[],
-  Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[], 0, 0, 0, 0, 0,
-  NTuple{7,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(), reject_sample, rows)
+SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
+  Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
+  0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+  reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
 # while replaying `moves`; 0 if it never does.
@@ -721,6 +725,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         if stats !== nothing
           push!(stats.end_searches, (iteration, length(best.moves), es_max_before, length(results),
             isempty(results) ? 0 : maximum(length, values(results)), es_accepted, es_best))
+          stats.keep_es_sources && push!(stats.es_sources, copy(best.moves))
         end
       end
       stats === nothing || (stats.end_search_ns += time_ns() - es_t0)
@@ -781,7 +786,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
               cached += 1
             end
           end
-          should_print && println("$iteration. released $released idle checkpoint caches, $cached still cached, pool $(length(c.perms))")
+          should_print && released > 0 && println("$iteration. released $released idle checkpoint caches, $cached still cached, pool $(length(c.perms))")
         end
 
         if should_print

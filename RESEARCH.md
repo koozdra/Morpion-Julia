@@ -152,6 +152,51 @@ Pitfalls found along the way:
 - A closure that reassigned captured counters made it 3–4× slower.
 - Re-hashing and copying the whole game on every pull dominated its cost.
 
+### end_search's contribution under the current defaults (2026-10-02): measured
+From the 8 × 30-minute runs (2026-10-02 defaults). The earlier entries in this section were under September defaults, when end_search seemed not to matter.
+
+- **It drives most of the progress:** calls that raised the candidate's max account for 328 of 541 points gained (61%), and 32 of 53 points after minute 5 (60%).
+- **But rarely:** only 18–31 of about 12k calls per run raised the max (0.2%).
+- **Supply is no longer a limit:** every 10k-iteration slot found an unsearched source.
+- **It fills the pool:** each call adds about 7 perms, about 86k per run.
+- **Cost:** about 11.6 ms per call at 20k perms, roughly 11–12% of time.
+
+### Calling end_search more often (2026-10-02): **Null**
+8 paired seeds × 30 min, varying `end_search_interval` (iterations between calls):
+
+| Interval | Final scores | Mean | Mean best at 5 / 10 / 20 / 30 min | Time in end_search |
+|---|---|---|---|---|
+| 10,000 (default) | 157 161 156 164 161 161 159 170 | 161.1 | 154.4 / 156.8 / 158.2 / 161.1 | 11% |
+| 5,000 | 160 118 159 158 162 160 159 162 | 154.8 | 151.8 / 152.8 / 154.2 / 154.8 | 16% |
+| 2,500 | 160 161 156 159 159 158 162 162 | 159.6 | 158.1 / 158.8 / 159.4 / 159.6 | 28% |
+
+Per seed against the default: 5,000 gave −6.4 [−17.8, +0.9] (median −0.5, with one stuck run at 118), and 2,500 gave −1.5 [−4.1, +0.9] (median −1.0).
+
+Calling it 4× as often got further early (158.1 vs 154.4 at 5 min) but then nearly stopped improving: +1.5 from minute 5 to 30, against +6.7 for the default. Its pool was also smaller (34k vs 52k perms). The default interval is fine for 30-minute runs; a 2,500 interval might suit runs of a few minutes.
+
+### Comprehensiveness under the current defaults (2026-10-02): measured
+298 end_search calls sampled from 6 × 10-minute runs (2026-10-02 defaults, `improvement_step_up=1000`), each scored against exhaustive ground truth over the 25% wind-back window, 2 seeds per call per variant.
+
+Neighbourhoods are bigger than in September: a median of 51 in-window alternatives per call (mean 135, max 2,227).
+
+| Variant | Recall per call | Pooled | All found | Beats max found | Time |
+|---|---|---|---|---|---|
+| UCB, stall 2000 (default) | 0.59 | 0.36 | 13% | 8/10 | 1.00× |
+| UCB, stall 4000 | 0.63 | 0.40 | 15% | 8/10 | 1.95× |
+| UCB, stall 8000 | 0.67 | 0.45 | 17% | 8/10 | 4.12× |
+| UCB, exploration 0.3 | 0.58 | 0.35 | 13% | 8/10 | 0.97× |
+| UCB, dot-uniform completion | 0.57 | 0.34 | 12% | 8/10 | 1.04× |
+| UCB, dot-uniform, stall 1000 | 0.53 | 0.30 | 11% | 8/10 | 0.51× |
+| Old sequential end_search | 0.60 | 0.34 | 15% | 8/10 | 1.02× |
+
+- **Recall falls with neighbourhood size.** The default finds every alternative in 63% of calls with 1–5 of them, 38% with 6–20, 2% with 21–100, and never above 100 (pooled recall 0.80, 0.78, 0.57, 0.31).
+- **Only budget buys recall, and slowly.** Twice the time adds about 4 points of pooled recall; four times adds 9.
+- **Exploration didn't help, and neither did dot-uniform completions.** Dot-uniform picks uniformly among new dots rather than moves, aimed at the ~18 games per point set.
+- **Breakthroughs are rarely missed.** Only 5 of 298 calls had a completion that beat the max, and every variant found it in 8 of 10 tries.
+- **Exhaustive enumeration isn't an option.** Even an unoptimised version is 53× the default's total time (median 55 ms vs 4.2 ms per call, max 6.7 s), and only 30% of calls finish within 20 ms.
+
+Given that doubling end_search's time via call frequency didn't raise 30-minute scores (above), buying recall with a longer stall is unlikely to either.
+
 ## Neighbourhood structure
 
 ### Dead ends under end_search (2026-09-28): measured
@@ -202,6 +247,26 @@ Removing the capture and making the closure's variables `local` gave bit-identic
 | Time, 2 seeds × 4M iterations | 78.0 s | 71.3 s (1.09× faster) |
 
 A test in `test/test_perf.jl` now fails if any of `main`'s variables is boxed. The dead `step_back_index` machinery (`StepBackPack`, the `Candidate` field, the idle-reset loop over it) and unused locals like `score_multiplier` were then deleted, again with bit-identical results.
+
+### Julia compiler flags (2026-10-02): **Null**
+2 seeds × 4M iterations, each configuration run twice, one run at a time:
+
+| Flags | Time |
+|---|---|
+| default | 71.5–71.7 s |
+| `-O3` | 71.1 s |
+| `--check-bounds=no` | 71.2–71.9 s |
+| both | 71.8–73.0 s |
+
+All within ±1%, with identical results. The hot loops are already `@inbounds`, and the default `-O2` gets everything `-O3` would.
+
+### Several searches as threads in one process (2026-10-02): measured
+8 seeded searches × 4M iterations, run either as `Threads.@spawn` tasks in one `julia -t 8` process or as 8 separate processes:
+- **Same results:** identical scores per seed. Julia's RNG is task-local, so each task seeds its own.
+- **Same throughput:** 40.7 s wall with threads, 35–40 s per process.
+- **Much less memory:** 502 MB peak for the threaded process against about 330–360 MB *each* for separate processes (~2.7 GB total). The runtime and compiled code are shared.
+
+Threads don't speed up a single search; the main loop is sequential.
 
 ## Memory
 
