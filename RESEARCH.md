@@ -95,6 +95,27 @@ A/B at 180 s × 12 paired seeds (baseline mean 151.2). Differences are per-seed,
 
 High per-pick yield from fresh perms doesn't turn into score, so long, deep exploitation of `perms[1]` appears to be load-bearing. Both 10k-sort arms produced the highest peaks (161, 160 vs 155) but also the worst failures. They raise variance, which might suit best-of-N record hunting (untested).
 
+### Selection under the current defaults (2026-10-05): measured
+6 seeds × 10 min, 2026-10-04 defaults (pools of ~1.4k perms, median; p10 384, p90 4.5k), `SearchStats`. Selection is `rand()^10` over a pool re-sorted every 100k iterations, alternating score order (exploit) and fewest-visits order (explore).
+
+- **The explore phase rarely produces new bests:** it gets 50% of picks but only 22% of new bests (0.21 vs 0.74 per 1M picks). Max-score perms sit at the back of visits order, so only 0.1% of explore picks hit one.
+- **Exploit productivity collapses after each re-sort:** new bests per 1M picks are 22.5 in the first 1k iterations, then 2.4 (1k–10k), 0.6 (10k–30k), and 0.26 (30k–100k). The first 10k iterations (5% of exploit picks) give 46% of the exploit phase's new bests. A new best is pushed to the back and waits for the next score-order sort.
+- **Position 1 gets about 50% of all picks.** P(first) = n^−0.1, so this is lower than with September's tiny pools.
+
+### Selection settings (2026-10-05): **Null**
+A/B at 10 min × 12 paired seeds. New options make each change possible without side effects: `sort_interval` (decoupled from `debug_interval`), `sort_rotation` and `new_best_first`; all default to the previous behaviour.
+
+| Arm | Mean (median) | Per seed vs base | Better / worse / tied |
+|---|---|---|---|
+| base (alternate, re-sort every 100k, skew 10) | 151.6 (155.0) | — | — |
+| score order only (no explore phase) | 150.5 (156.0) | −1.1 [−9.0, +5.5] | 5 / 5 / 2 |
+| re-sort every 25k | 153.1 (156.0) | +1.5 [−2.9, +6.8] | 6 / 6 / 0 |
+| new bests to the front | 152.2 (156.0) | +0.6 [−2.3, +3.8] | 6 / 6 / 0 |
+| skew 5 | 150.6 (156.5) | −1.0 [−9.8, +6.9] | 5 / 6 / 1 |
+| skew 20 | 153.4 (156.5) | +1.8 [−1.8, +5.9] | 6 / 5 / 1 |
+
+Every arm is within noise of the base: medians differ by at most 1.5 points and every interval spans zero. The per-pick yield differences above don't turn into final score, consistent with the September finding. Most of the variance is stuck runs, and they're tied to the seed, not the setting: seed 1107 stuck at 109–138 in every arm. So the selection system is on a flat optimum, and the bigger lever is probably detecting and escaping stuck runs.
+
 ### Taboo list for long-visited perms (2026-10-02): **Rejected** (not built)
 Question: past some visit count (picks since the perm last produced an accepted child), is a perm useless and safe to drop?
 Setup: 6 seeds × 300 s, 2026-10 defaults.

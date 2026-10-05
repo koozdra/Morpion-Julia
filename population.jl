@@ -624,10 +624,17 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # what makes two configurations the same: :points (the set of dots) or
     # :lines (the set of lines drawn). Keys the pool index, the end_searched
     # set, end_search's own dedup and the "child is its parent" check
-    config_key::Symbol=:points)
+    config_key::Symbol=:points,
+    # how often each pool is re-sorted for selection, and which orders are used:
+    # :alternate (score order, then visits order, ...), :score or :visits
+    sort_interval::Int=debug_interval,
+    sort_rotation::Symbol=:alternate,
+    # put each new best at the front of its pool instead of the back
+    new_best_first::Bool=false)
     es_mode in (:sequential, :ucb) || throw(ArgumentError("es_mode must be :sequential or :ucb, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
     config_key in (:points, :lines) || throw(ArgumentError("config_key must be :points or :lines, got $config_key"))
+    sort_rotation in (:alternate, :score, :visits) || throw(ArgumentError("sort_rotation must be :alternate, :score or :visits, got $sort_rotation"))
     lines_key = config_key === :lines
     perm_length = 46 * 46 * 4
     moves_only = dna_storage !== :full
@@ -781,6 +788,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 eval_moves_hash
             )
 
+            # a new best goes to the front (picked most) or waits at the back for
+            # the next score-order sort
+            new_best_first ? pushfirst!(candidates[candidate_position].perms, new_perm) :
             push!(candidates[candidate_position].perms, new_perm)
             candidates[candidate_position].max_score = eval_score
             candidates[candidate_position].max_moves = pack_mode ? copy(eval_moves) : new_perm.moves
@@ -901,6 +911,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                             es_moves_hash
                         )
 
+                        new_best_first ? pushfirst!(end_search_candidate.perms, new_perm) :
                         push!(end_search_candidate.perms, new_perm)
                         end_search_candidate.index[es_moves_hash] = new_perm
                         end_search_candidate.max_moves = es_moves
@@ -958,33 +969,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     prune_candidate!(c)
                 end
 
-                sort_fn =
-                    if (iteration ÷ debug_interval) % 2 == 0
-                        (p -> (-p.score, p.visits))
-                    else
-                        # (iteration ÷ debug_interval) % 2 == 1
-                        (p -> p.visits)
-                        # else
-                        #   function (p)
-                        #     score = length(p.moves)
-                        #     -(score - p.visits/(score * 10000))
-                        #   end
-                        # else
-                        #   function (p)
-                        #     score = length(p.moves)
-
-                        #     # normalization 
-                        #     min_score = c.max_score - c.back_accept
-                        #     normalized_score = (score - min_score) / (c.max_score - min_score + 0.0001)
-                        #     exploitation = normalized_score
-                        #     exploration = sqrt(2) * sqrt(log(c.visits + 1) / p.visits)
-                        #     -(exploitation + exploration)
-                        #   end
-
-                    end
-
-                sort!(c.perms, by=sort_fn)
-
                 if release_caches
                     released = 0
                     cached = 0
@@ -1032,6 +1016,24 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 end
             end
 
+        end
+
+        # Re-sort each pool; perms are picked by rand()^selection_skew over this
+        # order. By score then fewest visits (exploit) or by fewest visits
+        # (explore); sort_rotation = :alternate switches every sort_interval.
+        # Earlier ideas for a third order, kept for reference:
+        #   p -> -(p.score - p.visits / (p.score * 10000))
+        #   UCB-style: normalized score + sqrt(2) * sqrt(log(c.visits + 1) / p.visits)
+        if iteration % sort_interval == 0
+            by_score = sort_rotation === :score ||
+                       (sort_rotation === :alternate && (iteration ÷ sort_interval) % 2 == 0)
+            for c in candidates
+                if by_score
+                    sort!(c.perms, by=p -> (-p.score, p.visits))
+                else
+                    sort!(c.perms, by=p -> p.visits)
+                end
+            end
         end
 
         iteration += 1
