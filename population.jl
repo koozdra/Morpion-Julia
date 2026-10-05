@@ -408,7 +408,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     move_selection_skew::Real=1,
     idle_reset::Int=512,
     idle_reset_step_back::Int=default_back_accept,
-    improvement_step_up::Int=1000,
+    improvement_step_up::Int=100,
     initial_candidates_size::Int=1,
     # end_search wind-back depth (fraction of the source's score) and how many
     # fruitless completions in a row end each wind-back step
