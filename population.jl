@@ -224,6 +224,120 @@ function dna_from_moves!(dna::Vector{UInt16}, base::Vector{UInt16}, moves::Vecto
     dna
 end
 
+# Packed storage (main's dna_storage=:pack): a game is stored as the decisions
+# of a canonical replay, the scheme generate_pack uses. Repeatedly take the
+# possible moves not yet rejected, sorted by (dot, line); for each, one bit says
+# whether the game plays it (it is played) or not (it is rejected for good).
+# About 1.7 bits per move. Decoding replays the game in that canonical order,
+# so the original move order is lost; only the set of lines survives.
+const PACK_N = 46 * 46 * 4
+pack_key(m::Move) = board_index(m.x, m.y) * PACK_N + dna_index(m)
+
+mutable struct PackCodec
+    board::Vector{UInt8}
+    possible::Vector{Move}
+    round::Vector{Move}
+    bits::Vector{Bool}
+    in_game::Vector{UInt32}   # stamp: this dna index is a move of the game being encoded
+    rejected::Vector{UInt32}  # stamp: rejected in this encode/decode
+    stamp::UInt32
+end
+
+PackCodec() = PackCodec(zeros(UInt8, 46 * 46), Move[], Move[], Bool[], zeros(UInt32, PACK_N), zeros(UInt32, PACK_N), 0)
+
+function pack_reset!(c::PackCodec)
+    c.stamp += 1
+    copyto!(c.board, initial_board_master)
+    empty!(c.possible)
+    append!(c.possible, initial_moves_master)
+    c.stamp
+end
+
+# the possible moves not rejected so far, in canonical order
+function pack_round!(c::PackCodec, st)
+    empty!(c.round)
+    @inbounds for m in c.possible
+        c.rejected[dna_index(m)] != st && push!(c.round, m)
+    end
+    # insertion sort: rounds are ~15 moves, and sort! with a key allocates
+    r = c.round
+    @inbounds for i in 2:length(r)
+        m = r[i]
+        k = pack_key(m)
+        j = i - 1
+        while j >= 1 && pack_key(r[j]) > k
+            r[j+1] = r[j]
+            j -= 1
+        end
+        r[j+1] = m
+    end
+    r
+end
+
+function pack_encode(c::PackCodec, moves::Vector{Move})
+    st = pack_reset!(c)
+    @inbounds for m in moves
+        c.in_game[dna_index(m)] = st
+    end
+    remaining = length(moves)
+    empty!(c.bits)
+    while remaining > 0
+        round = pack_round!(c, st)
+        isempty(round) && error("pack_encode: not a valid game")
+        @inbounds for m in round
+            i = dna_index(m)
+            if c.in_game[i] == st
+                push!(c.bits, true)
+                make_move(c.board, m, c.possible)
+                c.in_game[i] = 0
+                remaining -= 1
+                remaining == 0 && break
+            else
+                push!(c.bits, false)
+                c.rejected[i] = st
+            end
+        end
+    end
+    nb = length(c.bits)
+    out = zeros(UInt8, 2 + cld(nb, 8))
+    out[1] = nb & 0xff
+    out[2] = nb >> 8
+    @inbounds for k in 1:nb
+        c.bits[k] && (out[2+((k-1)>>3)+1] |= 0x01 << ((k - 1) & 7))
+    end
+    out
+end
+
+# Decodes `pack` into `out` (cleared first) in canonical order.
+function pack_decode!(c::PackCodec, out::Vector{Move}, pack::Vector{UInt8})
+    st = pack_reset!(c)
+    empty!(out)
+    nb = Int(pack[1]) | Int(pack[2]) << 8
+    k = 0
+    while k < nb
+        round = pack_round!(c, st)
+        @inbounds for m in round
+            bit = (pack[2+(k>>3)+1] >> (k & 7)) & 0x01 == 0x01
+            k += 1
+            if bit
+                push!(out, m)
+                make_move(c.board, m, c.possible)
+            else
+                c.rejected[dna_index(m)] = st
+            end
+            k == nb && break
+        end
+    end
+    out
+end
+
+# identifies a game's set of lines (unlike points_hash, which only sees dots)
+const LINE_ZOBRIST = rand(Random.Xoshiro(0x6c696e6573), UInt64, PACK_N)
+lines_hash(moves::Vector{Move}) = reduce(⊻, (LINE_ZOBRIST[dna_index(m)] for m in moves); init=UInt64(0))
+
+const EMPTY_MOVES = Move[]       # shared by every packed perm; never mutated
+const EMPTY_PACK = UInt8[]
+
 mutable struct Perm
     visits::Int
     perm::Vector{UInt16}
@@ -237,9 +351,65 @@ mutable struct Perm
     # picks in the current print interval (`pick_window` = iteration ÷ print_interval)
     window_picks::Int
     pick_window::Int
+    # game length, kept separately because packed perms have no moves vector
+    score::Int
+    # the packed game under dna_storage=:pack (EMPTY_PACK otherwise)
+    pack::Vector{UInt8}
+    # slot of its decoded moves in the DecodeCache (0 = not cached)
+    slot::Int
 end
 
-Perm(visits, perm, moves, moves_hash) = Perm(visits, perm, moves, moves_hash, nothing, 0, -1)
+Perm(visits, perm, moves, moves_hash) = Perm(visits, perm, moves, moves_hash, nothing, 0, -1, length(moves), EMPTY_PACK, 0)
+
+# Decoded moves of recently picked packed perms (dna_storage=:pack), in a fixed
+# number of reusable slots with CLOCK replacement (an approximation of LRU: a
+# hit marks its slot recently used; a miss advances the hand past recently used
+# slots, clearing their marks, and evicts the first one that isn't).
+mutable struct DecodeCache
+    slots::Vector{Vector{Move}}
+    owner::Vector{Union{Nothing,Perm}}
+    used::Vector{Bool}
+    hand::Int
+    hits::Int
+    misses::Int
+end
+
+DecodeCache(n::Int) = DecodeCache([Move[] for _ in 1:n], Vector{Union{Nothing,Perm}}(nothing, n), fill(false, n), 1, 0, 0)
+
+# The decoded moves of packed perm p, from the cache or decoded into a slot.
+# The returned vector belongs to the cache: read it, don't keep it.
+function cached_moves!(dc::DecodeCache, codec::PackCodec, p::Perm)
+    s = p.slot
+    if s > 0 && dc.owner[s] === p
+        dc.used[s] = true
+        dc.hits += 1
+        return dc.slots[s]
+    end
+    dc.misses += 1
+    n = length(dc.slots)
+    while dc.used[dc.hand]
+        dc.used[dc.hand] = false
+        dc.hand = dc.hand % n + 1
+    end
+    s = dc.hand
+    old = dc.owner[s]
+    old === nothing || (old.slot = 0)
+    dc.owner[s] = p
+    dc.used[s] = true
+    p.slot = s
+    dc.hand = s % n + 1
+    pack_decode!(codec, dc.slots[s], p.pack)
+end
+
+# Forgets p's cached moves (its pack changed).
+function uncache!(dc::DecodeCache, p::Perm)
+    s = p.slot
+    if s > 0 && dc.owner[s] === p
+        dc.owner[s] = nothing
+        dc.used[s] = false
+    end
+    p.slot = 0
+end
 
 mutable struct Candidate
     visits::Int
@@ -260,7 +430,7 @@ function prune_candidate!(c::Candidate)
 
     c.back_accept = max(0, c.back_accept - 1)
     filter!(c.perms) do perm
-        if length(perm.moves) < c.max_score - c.back_accept
+        if perm.score < c.max_score - c.back_accept
             delete!(c.index, perm.moves_hash)
             false  # drop it from c.perms
         else
@@ -309,6 +479,9 @@ mutable struct SearchStats
     # source game of each end_search call (same order), when keep_es_sources
     es_sources::Vector{Vector{Move}}
     keep_es_sources::Bool
+    # decode cache counters under dna_storage=:pack
+    pack_cache_hits::Int
+    pack_cache_misses::Int
     # maintenance snapshots: (iteration, seconds, candidate, max_score, back_accept, pool size, perms at max, distinct scores)
     snapshots::Vector{NTuple{8,Float64}}
     # parent game -> step at which each dna index first became legal (0 = never)
@@ -324,7 +497,7 @@ end
 
 SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
     Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
-    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
     reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
@@ -430,15 +603,25 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # a print interval on; a cache costs ~1.4 rollouts to build and saves ~18%
     # of each later rollout, so caching rarely picked perms wastes time and memory
     cache_min_picks::Int=8,
-    # :moves keeps only each perm's moves and rebuilds a dna from them when it is
-    # picked (see dna_from_moves!; ~30x less pool memory, no checkpoint caches);
+    # :pack keeps only a packed set of lines per perm (~1.8 bits per move, see
+    # PackCodec), decoded in canonical order when the perm is picked, so its
+    # move order is lost; :moves keeps each perm's moves in the order played;
+    # both rebuild a dna from the moves on every pick (see dna_from_moves!).
     # :full keeps every perm's evolved dna (16.6 KB each). checkpoint_interval,
     # release_idle_caches and cache_min_picks only apply to :full
-    dna_storage::Symbol=:moves)
+    dna_storage::Symbol=:pack,
+    # under :pack, how many recently picked perms keep their decoded moves
+    # (~0.8 KB each); 0 decodes on every pick
+    pack_cache_size::Int=16384)
     es_mode in (:sequential, :ucb) || throw(ArgumentError("es_mode must be :sequential or :ucb, got $es_mode"))
-    dna_storage in (:full, :moves) || throw(ArgumentError("dna_storage must be :full or :moves, got $dna_storage"))
+    dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
     perm_length = 46 * 46 * 4
-    moves_only = dna_storage === :moves
+    moves_only = dna_storage !== :full
+    pack_mode = dna_storage === :pack
+    codec = PackCodec()
+    pick_moves = Move[]   # the picked perm's decoded moves under :pack
+    packed_perm(moves, h) = Perm(0, UInt16[], EMPTY_MOVES, h, nothing, 0, -1, length(moves), pack_encode(codec, moves), 0)
+    decode_cache = DecodeCache(pack_mode ? pack_cache_size : 0)
     # with moves_only, pool perms store no dna; the picked perm's dna is rebuilt
     # into dna_buf
     dna_base = moves_only ? shuffle(UInt16(1):UInt16(perm_length)) : UInt16[]
@@ -462,7 +645,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             perm_moves, perm_moves_hash = eval_dna_and_hash(perm)
             haskey(index, perm_moves_hash) && continue
 
-            new_perm = Perm(
+            new_perm = pack_mode ? packed_perm(perm_moves, perm_moves_hash) : Perm(
                 0,
                 moves_only ? UInt16[] : perm,
                 perm_moves,
@@ -471,16 +654,17 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             push!(perms, new_perm)
             index[perm_moves_hash] = new_perm
         end
-        sort!(perms, by=p -> -length(p.moves))
+        sort!(perms, by=p -> -p.score)
         best = perms[1]
+        best_moves = pack_mode ? copy(pack_decode!(codec, Move[], best.pack)) : best.moves
 
         push!(candidates,
             Candidate(
                 0,
                 perms,
                 index,
-                best.moves,
-                length(best.moves),
+                best_moves,
+                best.score,
                 default_back_accept,
                 0,
                 0
@@ -518,9 +702,12 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         # weighted
         perm_pos = floor(Int, rand()^selection_skew * length(candidate.perms)) + 1
         perm = candidate.perms[perm_pos]
-        perm_score = length(perm.moves)
+        pmoves = !pack_mode ? perm.moves :
+                 pack_cache_size > 0 ? cached_moves!(decode_cache, codec, perm) :
+                 pack_decode!(codec, pick_moves, perm.pack)
+        perm_score = perm.score
         stats !== nothing && stats.rows &&
-            (stats_parent = (moves=copy(perm.moves), visits=perm.visits, hash=perm.moves_hash))  # refresh may overwrite perm.moves
+            (stats_parent = (moves=copy(pmoves), visits=perm.visits, hash=perm.moves_hash))  # refresh may overwrite perm.moves
         perm.visits += 1
 
         stats === nothing || (eval_t0 = time_ns())
@@ -532,7 +719,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         perm.window_picks += 1
         use_cache = checkpoint_interval > 0 && !moves_only &&
             (perm.cache !== nothing || perm.window_picks >= cache_min_picks)
-        dna = moves_only ? dna_from_moves!(dna_buf, dna_base, perm.moves, perm.moves_hash) : perm.perm
+        dna = moves_only ? dna_from_moves!(dna_buf, dna_base, pmoves, perm.moves_hash) : perm.perm
 
         if use_cache
             if perm.cache === nothing
@@ -547,7 +734,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
         empty!(modifications)
         for _ in 1:rand(2:num_modifications)
-            push!(modifications, (dna_index(selectByR(perm.moves, rand()^move_selection_skew)), rand(1:perm_length)))
+            push!(modifications, (dna_index(selectByR(pmoves, rand()^move_selection_skew)), rand(1:perm_length)))
         end
 
         use_cache &&
@@ -571,7 +758,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         is_in_index = haskey(candidate.index, eval_moves_hash)
 
         if eval_score > candidate.max_score
-            new_perm = Perm(
+            new_perm = pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(
                 0,
                 stored_dna(dna),
                 copy(eval_moves),
@@ -580,7 +767,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
             push!(candidates[candidate_position].perms, new_perm)
             candidates[candidate_position].max_score = eval_score
-            candidates[candidate_position].max_moves = new_perm.moves
+            candidates[candidate_position].max_moves = pack_mode ? copy(eval_moves) : new_perm.moves
             candidates[candidate_position].index[eval_moves_hash] = new_perm
 
             verbose && println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
@@ -592,7 +779,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         elseif eval_score >= (candidate.max_score - candidate.back_accept)
 
             if !is_in_index
-                new_perm = Perm(
+                new_perm = pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(
                     0,
                     stored_dna(dna),
                     copy(eval_moves),
@@ -625,8 +812,17 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 # the parent's own cache is checked below, where its dna is kept
                 stored !== perm && stored.cache !== nothing && (stored.cache.valid = false)
                 moves_only || copyto!(stored.perm, dna)
-                resize!(stored.moves, length(eval_moves))
-                copyto!(stored.moves, eval_moves)
+                if pack_mode
+                    # the pack only records the set of lines: re-pack only if the
+                    # child drew these dots with different lines
+                    if stored !== perm || lines_hash(eval_moves) != lines_hash(pmoves)
+                        stored.pack = pack_encode(codec, eval_moves)
+                        uncache!(decode_cache, stored)
+                    end
+                else
+                    resize!(stored.moves, length(eval_moves))
+                    copyto!(stored.moves, eval_moves)
+                end
             end
         end
 
@@ -657,17 +853,18 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 if is_end_searched
                     0
                 else
-                    length(p.moves)
+                    p.score
                 end
             end
 
             if !haskey(end_searched, best.moves_hash)
+                es_source = pack_mode ? pack_decode!(codec, Move[], best.pack) : best.moves
 
                 results = if es_mode === :ucb
-                    end_search_ucb(best.moves, 5;
+                    end_search_ucb(es_source, 5;
                         step_back_fraction=es_step_back_fraction, stall_rollouts=es_ucb_stall_rollouts)
                 else
-                    end_search(best.moves, 5;
+                    end_search(es_source, 5;
                         step_back_fraction=es_step_back_fraction, stall_cut_off=es_stall_cut_off)
                 end
                 es_max_before = end_search_candidate.max_score
@@ -681,7 +878,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                     if es_score > end_search_candidate.max_score
                         end_search_candidate.visits = 0
-                        new_perm = Perm(
+                        new_perm = pack_mode ? packed_perm(es_moves, es_moves_hash) : Perm(
                             0,
                             moves_only ? UInt16[] : generate_dna_all(es_moves),
                             es_moves,
@@ -700,7 +897,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         es_best += 1
 
                     elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !is_in_index
-                        new_perm = Perm(
+                        new_perm = pack_mode ? packed_perm(es_moves, es_moves_hash) : Perm(
                             0,
                             moves_only ? UInt16[] : generate_dna_all(es_moves),
                             es_moves,
@@ -716,16 +913,16 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                             end_search_candidate.improvement_counter += 1
                         end
 
-                        verbose && println("$iteration. ES $(length(best.moves)) -> $es_score i:$(length(end_search_candidate.index))")
+                        verbose && println("$iteration. ES $(best.score) -> $es_score i:$(length(end_search_candidate.index))")
                     end
                 end
 
                 end_searched[best.moves_hash] = true
 
                 if stats !== nothing
-                    push!(stats.end_searches, (iteration, length(best.moves), es_max_before, length(results),
+                    push!(stats.end_searches, (iteration, best.score, es_max_before, length(results),
                         isempty(results) ? 0 : maximum(length, values(results)), es_accepted, es_best))
-                    stats.keep_es_sources && push!(stats.es_sources, copy(best.moves))
+                    stats.keep_es_sources && push!(stats.es_sources, copy(es_source))
                 end
             end
             stats === nothing || (stats.end_search_ns += time_ns() - es_t0)
@@ -747,7 +944,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                 sort_fn =
                     if (iteration ÷ debug_interval) % 2 == 0
-                        (p -> (-length(p.moves), p.visits))
+                        (p -> (-p.score, p.visits))
                     else
                         # (iteration ÷ debug_interval) % 2 == 1
                         (p -> p.visits)
@@ -813,7 +1010,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             if stats !== nothing
                 stats.maintenance_ns += time_ns() - maint_t0
                 for (ci, c) in enumerate(candidates)
-                    scores = [length(p.moves) for p in c.perms]
+                    scores = [p.score for p in c.perms]
                     push!(stats.snapshots, (iteration, time() - start_time, ci, c.max_score, c.back_accept,
                         length(c.perms), count(==(c.max_score), scores), length(unique(scores))))
                 end
@@ -824,6 +1021,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         iteration += 1
     end
 
+    if stats !== nothing
+        stats.pack_cache_hits = decode_cache.hits
+        stats.pack_cache_misses = decode_cache.misses
+    end
     candidates
 end
 

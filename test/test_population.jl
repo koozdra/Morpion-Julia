@@ -90,12 +90,16 @@ end
   @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
   @test length(Set(p.moves_hash for p in c.perms)) == length(c.perms)
 
-  # every retained perm is a real, fully played game whose stored hash matches
+  # every retained perm is a real, fully played game whose stored hash and
+  # score match (packed perms, the default, are decoded first)
+  codec = PackCodec()
   for p in c.perms
-    @test points_hash(p.moves) == p.moves_hash
-    @test (verify(Morpion(p.moves)); true)
+    moves = isempty(p.pack) ? p.moves : pack_decode!(codec, Move[], p.pack)
+    @test points_hash(moves) == p.moves_hash
+    @test length(moves) == p.score
+    @test (verify(Morpion(moves)); true)
   end
-  @test maximum(length(p.moves) for p in c.perms) == c.max_score
+  @test maximum(p.score for p in c.perms) == c.max_score
 end
 
 @testset "checkpointed main() reproduces the uncheckpointed search exactly" begin
@@ -177,4 +181,70 @@ end
   @test length(s.snapshots) == 20
   @test !isempty(s.end_searches)
   @test s.eval_ns > 0
+end
+
+@testset "pack codec round-trips games in canonical order" begin
+  c = PackCodec()
+  out = Move[]
+  rng = MersenneTwister(31)
+  games = [random_game(rng)[2] for _ in 1:30]
+  append!(games, [unpack_pack(p[2]).moves for p in GOLDEN_PACKS[[1, 6, 15]]])
+  for g in games
+    p = pack_encode(c, g)
+    d = copy(pack_decode!(c, out, p))
+    @test Set(d) == Set(g)                       # same lines
+    @test points_hash(d) == points_hash(g)
+    @test pack_encode(c, d) == p                 # canonical
+    @test d == unpack_pack(generate_pack(g)).moves
+    @test (verify(Morpion(d)); true)
+  end
+end
+
+@testset "main() with packed storage keeps a consistent pool" begin
+  Random.seed!(15)
+  c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
+    verbose=false, initial_perms_size=10, dna_storage=:pack)[1]
+  @test isempty(EMPTY_MOVES)                     # the shared empty vector is never written to
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  codec = PackCodec()
+  out = Move[]
+  for p in c.perms
+    m = pack_decode!(codec, out, p.pack)
+    @test length(m) == p.score
+    @test points_hash(m) == p.moves_hash
+  end
+  @test maximum(p.score for p in c.perms) == c.max_score == length(c.max_moves)
+end
+
+@testset "DecodeCache returns the same moves as decoding, with bounded slots" begin
+  codec = PackCodec()
+  dc = DecodeCache(4)
+  rng = MersenneTwister(41)
+  perms = map(1:10) do _
+    g = random_game(rng)[2]
+    Perm(0, UInt16[], EMPTY_MOVES, points_hash(g), nothing, 0, -1, length(g), pack_encode(codec, g), 0)
+  end
+  out = Move[]
+  for _ in 1:200
+    p = perms[rand(rng, 1:10)]
+    @test cached_moves!(dc, codec, p) == pack_decode!(codec, out, p.pack)
+  end
+  @test dc.hits > 0 && dc.misses > 0
+  @test count(p -> p.slot > 0, perms) <= 4
+  @test all(p -> p.slot == 0 || dc.owner[p.slot] === p, perms)
+  p = perms[1]
+  cached_moves!(dc, codec, p)
+  uncache!(dc, p)
+  @test p.slot == 0
+end
+
+@testset "packed storage gives the same search with or without the decode cache" begin
+  runs = map((0, 64, 16384)) do n
+    Random.seed!(16)
+    c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
+      verbose=false, initial_perms_size=10, dna_storage=:pack, pack_cache_size=n)[1]
+    (c.max_moves, [p.moves_hash for p in c.perms], [p.pack for p in c.perms])
+  end
+  @test runs[2] == runs[1]
+  @test runs[3] == runs[1]
 end

@@ -44,17 +44,17 @@ If an entry stops being true (the code or defaults changed), mark it rather than
 
 ## Current state
 
-Defaults as of 2026-10-02 (branch `moves-only-dna`):
+Defaults as of 2026-10-04:
 
 | Setting | Value | Note |
 |---|---|---|
 | `num_modifications` | 10 | 2–10 swaps per mutation |
 | `default_back_accept` | 10 | was 3 in late September |
 | `selection_skew` | 10 | `rand()^10` over the sorted pool |
-| `idle_reset` / `improvement_step_up` | 512 / 10000 | pruning almost never runs, so the pool grows without limit |
+| `idle_reset` / `improvement_step_up` | 128 / 100 | was 512 / 10000 (2026-10-02), when pruning almost never ran and pools reached 50–100k perms; pools now stay around 1–2k |
 | `initial_perms_size` | 100 | random perms each candidate starts with |
 | `es_mode` | `:ucb` | UCB end_search (see below) |
-| `dna_storage` | `:moves` | pool keeps moves only (see [Memory](#memory)) |
+| `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
 | `checkpoint_interval`, `release_idle_caches`, `cache_min_picks` | 4, true, 8 | only apply to `dna_storage=:full` |
 
 ## Selection and search dynamics
@@ -313,6 +313,28 @@ Not worth doing for 30-minute runs. It may be for runs of hours, if the pool kee
 - **Decoding is slow:** `unpack_pack` takes 22 µs and `generate_pack` 33 µs, against a 14.7 µs rollout. Even a fast decoder can't beat a plain replay, at 8.5 µs.
 - **Misses would be frequent:** picks are spread across the pool, so the LRU hit rates measured earlier apply. At 4,096 cached perms, 73–78% hit means ~20% slower; at 16,384 (13 MB of cache), 86–95% hit means 5–12% slower.
 - **The saving is small:** per perm ~200 B instead of ~940 B, so about 25 MB total at 59k perms including the cache. The 2-byte index saves about the same with no slowdown and much less code.
+
+### Packed storage and move order (2026-10-04): **Adopted** (default since 2026-10-04)
+`dna_storage=:pack` stores each perm as a bit-packed set of lines, using the scheme `generate_pack` uses: one bit per candidate move considered in a canonical replay. A 178-move game takes 41 bytes. Decoding returns the canonical order, so a perm's move order is lost, and so is the drift through orders that moves-only storage has: same-dots reordered children get adopted on about 9% of iterations.
+
+Fast codec: 12 µs to decode or encode, with no allocation. Optional `DecodeCache` of decoded moves (`pack_cache_size`, CLOCK replacement, default 16,384 slots). Results are identical with or without the cache.
+
+A/B at 10 min × 12 paired seeds, 2026-10-04 defaults (`idle_reset=128`, `improvement_step_up=100`, so pools stay at about 1–2k perms):
+
+| Arm | Mean (median) final | Mean best at 2 / 5 / 10 min | Iterations/s | Bytes per perm |
+|---|---|---|---|---|
+| moves (default) | 152.5 (155.0) | 148.0 / 151.2 / 152.5 | 88k | 907 |
+| pack, no cache | 156.5 (157.0) | 151.9 / 154.8 / 156.5 | 39k | 197 |
+| pack, 16k cache (98.6% hits) | 156.9 (157.5) | 154.4 / 156.6 / 156.9 | 86k | 197 + cache |
+
+- **Pack + cache vs moves:** +4.4 [−0.1, +11.8] at equal time (median +2; better on 7 seeds, worse on 4, tied on 1).
+- **Uncached pack vs moves:** +4.0 [−0.2, +11.0] at equal time, and +5.8 [+1.4, +12.5] at equal iterations.
+- **Caveat:** part of the mean gap is one stuck moves run (117); the medians differ by 2.
+
+Conclusions:
+- **Move order isn't load-bearing.** A fixed canonical order is at least as good, and possibly slightly better. Even with 56% fewer iterations, uncached pack matched moves.
+- **The cache removes the speed cost:** 86k vs 88k iterations/s.
+- **Memory hardly matters at these settings:** pools are ~1–2k perms (about 1 MB under moves), so peak RSS was ~355–362 MB in every arm. With small pools the cache holds every perm's moves anyway; the saving only appears with large pools (e.g. `improvement_step_up=10000`, 50k+ perms).
 
 ## Background: the record and the literature
 
