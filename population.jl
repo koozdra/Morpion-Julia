@@ -40,12 +40,20 @@ function revert_swaps!(perm::Vector{UInt16}, swaps)
     perm
 end
 
+# A configuration's identity: the set of dots it placed (points hash, the
+# default) or the set of lines it drew (lines = true). Several games draw the
+# same dots with different lines; only the lines key tells them apart.
+@inline move_key(m::Move, lines::Bool) =
+    lines ? LINE_ZOBRIST[dna_index(m)] : points_zobrist[board_index(m.x, m.y)]
+config_hash(moves::Vector{Move}, lines::Bool) = lines ? lines_hash(moves) : points_hash(moves)
+
 # Winds back the last 1..step_back_fraction*score moves of `moves` and samples
 # random completions from each prefix, until stall_cut_off completions in a row
 # add nothing new (or index_cap results are collected). Returns every distinct
-# completion scoring above score - back_accept, keyed by points hash.
+# completion scoring above score - back_accept, keyed by points hash (or by
+# lines hash with lines = true).
 function end_search(moves::Array{Move,1}, back_accept;
-    step_back_fraction::Real=0.25, stall_cut_off::Int=200, index_cap::Int=1000)
+    step_back_fraction::Real=0.25, stall_cut_off::Int=200, index_cap::Int=1000, lines::Bool=false)
     score = length(moves)
 
     index = Dict{UInt64,Array{Move,1}}()
@@ -92,7 +100,7 @@ function end_search(moves::Array{Move,1}, back_accept;
             end
 
             eval_score = length(eval_made_moves)
-            eval_points_hash = points_hash(eval_made_moves)
+            eval_points_hash = config_hash(eval_made_moves, lines)
 
             if eval_score > score - back_accept && !haskey(index, eval_points_hash)
                 index[eval_points_hash] = copy(eval_made_moves)
@@ -107,9 +115,9 @@ function end_search(moves::Array{Move,1}, back_accept;
 end
 
 # One random completion from a checkpoint (board, possible moves, points hash of
-# the moves so far). Leaves the completion's own moves in `suffix` and returns
-# the points hash of the whole game.
-function ucb_completion!(board, possible_moves, suffix, from_board, from_possible, h::UInt64)
+# the moves so far, or lines hash with lines = true). Leaves the completion's
+# own moves in `suffix` and returns the hash of the whole game.
+function ucb_completion!(board, possible_moves, suffix, from_board, from_possible, h::UInt64, lines::Bool=false)
     copyto!(board, from_board)
     empty!(possible_moves)
     append!(possible_moves, from_possible)
@@ -118,7 +126,7 @@ function ucb_completion!(board, possible_moves, suffix, from_board, from_possibl
         move = possible_moves[rand(1:end)]
         push!(suffix, move)
         make_move(board, move, possible_moves)
-        h ⊻= points_zobrist[board_index(move.x, move.y)]
+        h ⊻= move_key(move, lines)
     end
     h
 end
@@ -131,10 +139,10 @@ end
 # go to the depths that are still turning up new completions instead of a
 # fixed stall per depth. Stops once stall_rollouts average completions' worth of
 # moves in a row find nothing new (or index_cap results are collected).
-# Returns the same kind of index as end_search.
+# Returns the same kind of index as end_search (lines = true keys it by lines).
 function end_search_ucb(moves::Array{Move,1}, back_accept;
     step_back_fraction::Real=0.25, stall_rollouts::Int=2000, index_cap::Int=1000,
-    exploration::Real=0.1, warmup::Int=2)
+    exploration::Real=0.1, warmup::Int=2, lines::Bool=false)
     score = length(moves)
     depth = floor(Int, score * step_back_fraction)
     index = Dict{UInt64,Array{Move,1}}()
@@ -155,7 +163,7 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
             prefix_hashes[k] = h
         end
         make_move(board, move, possible_moves)
-        h ⊻= points_zobrist[board_index(move.x, move.y)]
+        h ⊻= move_key(move, lines)
     end
 
     rewards = zeros(Int, depth)
@@ -190,7 +198,7 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
         end
 
         h = ucb_completion!(eval_board, eval_possible_moves, eval_suffix,
-            boards[k], possibles[k], prefix_hashes[k])
+            boards[k], possibles[k], prefix_hashes[k], lines)
         played = length(eval_suffix)
         found = score - k + played > score - back_accept && !haskey(index, h)
         found && (index[h] = vcat(moves[1:(score-k)], eval_suffix))
@@ -612,9 +620,15 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     dna_storage::Symbol=:pack,
     # under :pack, how many recently picked perms keep their decoded moves
     # (~0.8 KB each); 0 decodes on every pick
-    pack_cache_size::Int=16384)
+    pack_cache_size::Int=16384,
+    # what makes two configurations the same: :points (the set of dots) or
+    # :lines (the set of lines drawn). Keys the pool index, the end_searched
+    # set, end_search's own dedup and the "child is its parent" check
+    config_key::Symbol=:points)
     es_mode in (:sequential, :ucb) || throw(ArgumentError("es_mode must be :sequential or :ucb, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
+    config_key in (:points, :lines) || throw(ArgumentError("config_key must be :points or :lines, got $config_key"))
+    lines_key = config_key === :lines
     perm_length = 46 * 46 * 4
     moves_only = dna_storage !== :full
     pack_mode = dna_storage === :pack
@@ -643,6 +657,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             perm = UInt16.(1:perm_length)
             shuffle!(perm)
             perm_moves, perm_moves_hash = eval_dna_and_hash(perm)
+            lines_key && (perm_moves_hash = lines_hash(perm_moves))
             haskey(index, perm_moves_hash) && continue
 
             new_perm = pack_mode ? packed_perm(perm_moves, perm_moves_hash) : Perm(
@@ -747,6 +762,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         else
             eval_moves, eval_moves_hash = eval_dna_and_hash!(dna, eval_board, eval_possible, eval_made, eval_values)
         end
+        lines_key && (eval_moves_hash = lines_hash(eval_moves))
         eval_score = length(eval_moves)
         if stats !== nothing
             stats.eval_ns += time_ns() - eval_t0
@@ -862,10 +878,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                 results = if es_mode === :ucb
                     end_search_ucb(es_source, 5;
-                        step_back_fraction=es_step_back_fraction, stall_rollouts=es_ucb_stall_rollouts)
+                        step_back_fraction=es_step_back_fraction, stall_rollouts=es_ucb_stall_rollouts, lines=lines_key)
                 else
                     end_search(es_source, 5;
-                        step_back_fraction=es_step_back_fraction, stall_cut_off=es_stall_cut_off)
+                        step_back_fraction=es_step_back_fraction, stall_cut_off=es_stall_cut_off, lines=lines_key)
                 end
                 es_max_before = end_search_candidate.max_score
                 es_accepted = 0

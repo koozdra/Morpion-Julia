@@ -336,6 +336,18 @@ Conclusions:
 - **The cache removes the speed cost:** 86k vs 88k iterations/s.
 - **Memory hardly matters at these settings:** pools are ~1–2k perms (about 1 MB under moves), so peak RSS was ~355–362 MB in every arm. With small pools the cache holds every perm's moves anyway; the saving only appears with large pools (e.g. `improvement_step_up=10000`, 50k+ perms).
 
+### Keying configurations by lines instead of dots (2026-10-05): **Rejected**
+`config_key=:lines` makes the set of lines drawn, rather than the set of dots placed, a configuration's identity. That covers the pool index, the end_searched set, the child-is-its-parent check, and end_search's own dedup (`lines=true`). Games that place the same dots with different lines (about 18 per point set) become separate perms instead of being merged.
+
+A/B at 10 min × 12 paired seeds, 2026-10-04 defaults (packed storage):
+
+| Key | Final scores | Mean (median) | Pool at 5 / 10 min | end_search calls raising the max | Time in end_search | Iterations |
+|---|---|---|---|---|---|---|
+| points (default) | 158 157 152 158 157 162 159 156 159 159 132 155 | 155.3 (157.5) | 1.2k / 1.9k | 19.6 | 6.4% | 53.1M |
+| lines | 157 158 151 146 140 129 134 111 139 147 124 117 | 137.8 (139.5) | 42k / 114k | 9.2 | 11.4% | 44.5M |
+
+Lines − points: −17.6 [−26.0, −9.6] at equal time, and −17.4 [−25.8, −9.4] at equal iterations, worse on 11 of 12 seeds. Line variants flood the pool (60× more perms), which spreads selection over lateral copies of the same dot sets. end_search also spends nearly twice the time and raises the max half as often. Merging by dots works as useful dedup; keep `:points`. A longer `:lines` run (2026-10-05) confirmed that the index keeps growing.
+
 ## Background: the record and the literature
 
 Researched 2026-09-24.

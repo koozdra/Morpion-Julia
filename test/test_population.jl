@@ -248,3 +248,32 @@ end
   @test runs[2] == runs[1]
   @test runs[3] == runs[1]
 end
+
+@testset "end_search can key results by lines" begin
+  src = unpack_pack(GOLDEN_PACKS[6][2]).moves
+  for f in (end_search, end_search_ucb)
+    Random.seed!(17)
+    r = f(src, 5; lines=true)
+    @test !isempty(r)
+    for (h, m) in r
+      @test h == lines_hash(m)
+      @test length(m) > length(src) - 5
+    end
+  end
+end
+
+@testset "main() with config_key=:lines keys every perm by its lines" begin
+  for storage in (:pack, :moves)
+    Random.seed!(18)
+    c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
+      verbose=false, initial_perms_size=10, dna_storage=storage, config_key=:lines)[1]
+    @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+    codec = PackCodec()
+    for p in c.perms
+      m = storage === :pack ? pack_decode!(codec, Move[], p.pack) : p.moves
+      @test lines_hash(m) == p.moves_hash
+      @test length(m) == p.score
+    end
+  end
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, config_key=:bogus)
+end
