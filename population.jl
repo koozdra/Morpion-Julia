@@ -428,11 +428,17 @@ mutable struct Candidate
     back_accept::Int
     idle_counter::Float64
     improvement_counter::Int
+    # perms dropped by pruning, kept (up to main's archive_size, best scores
+    # first) so a later widening of the window can put them back
+    archive::Vector{Perm}
 end
+
+Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter) =
+    Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter, Perm[])
 
 # Tighten back_accept by one and drop every perm (and its index entry) that
 # falls below the new acceptance window.
-function prune_candidate!(c::Candidate)
+function prune_candidate!(c::Candidate; archive_size::Int=0)
     c.improvement_counter = 0
     c.idle_counter = 0
 
@@ -440,13 +446,42 @@ function prune_candidate!(c::Candidate)
     filter!(c.perms) do perm
         if perm.score < c.max_score - c.back_accept
             delete!(c.index, perm.moves_hash)
+            if archive_size > 0
+                perm.cache = nothing   # a checkpoint cache is ~94 KB; rebuilt if it returns
+                push!(c.archive, perm)
+            end
             false  # drop it from c.perms
         else
             true   # keep it
         end
     end
 
+    if length(c.archive) > archive_size
+        # keep the best scores; among equal scores, the most recently pruned
+        reverse!(c.archive)
+        sort!(c.archive, by=p -> -p.score)   # stable
+        resize!(c.archive, archive_size)
+    end
+
     c
+end
+
+# Puts back every archived perm whose score is inside the current window and
+# that isn't in the pool already; the rest stay archived. Returns the number
+# put back at each score, highest first.
+function reintroduce!(c::Candidate)
+    floor_score = c.max_score - c.back_accept
+    counts = Dict{Int,Int}()
+    filter!(c.archive) do p
+        p.score >= floor_score || return true          # still below the window
+        if !haskey(c.index, p.moves_hash)
+            push!(c.perms, p)
+            c.index[p.moves_hash] = p
+            counts[p.score] = get(counts, p.score, 0) + 1
+        end
+        false                                         # put back, or rediscovered meanwhile
+    end
+    sort!(collect(counts), by=x -> -x[1])
 end
 
 # Optional instrumentation for main(; stats=SearchStats()). One row per rollout
@@ -490,6 +525,9 @@ mutable struct SearchStats
     # decode cache counters under dna_storage=:pack
     pack_cache_hits::Int
     pack_cache_misses::Int
+    # idle resets (window widenings) and archived perms put back at them
+    idle_resets::Int
+    reintroduced::Int
     # maintenance snapshots: (iteration, seconds, candidate, max_score, back_accept, pool size, perms at max, distinct scores)
     snapshots::Vector{NTuple{8,Float64}}
     # parent game -> step at which each dna index first became legal (0 = never)
@@ -505,7 +543,7 @@ end
 
 SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
     Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
-    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
     reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
@@ -630,7 +668,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     sort_interval::Int=debug_interval,
     sort_rotation::Symbol=:alternate,
     # put each new best at the front of its pool instead of the back
-    new_best_first::Bool=false)
+    new_best_first::Bool=false,
+    # keep up to this many pruned perms per candidate and put them back when the
+    # idle reset widens the window (0 = pruned perms are dropped)
+    archive_size::Int=100_000)
     es_mode in (:sequential, :ucb) || throw(ArgumentError("es_mode must be :sequential or :ucb, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
     config_key in (:points, :lines) || throw(ArgumentError("config_key must be :points or :lines, got $config_key"))
@@ -966,7 +1007,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
             for c in sort(candidates, by=(c -> c.max_score))
                 if c.improvement_counter >= improvement_step_up
-                    prune_candidate!(c)
+                    prune_candidate!(c; archive_size=archive_size)
                 end
 
                 if release_caches
@@ -1000,6 +1041,16 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     c.improvement_counter = 0
                     c.idle_counter = 0
                     c.back_accept += idle_reset_step_back
+                    stats === nothing || (stats.idle_resets += 1)
+                    if archive_size > 0
+                        back = reintroduce!(c)
+                        stats === nothing || (stats.reintroduced += sum(last, back; init=0))
+                        if verbose && !isempty(back)
+                            println("$iteration. reintroduced $(sum(last, back)) archived configurations: ",
+                                join(["$(sc)×$(n)" for (sc, n) in back], " "),
+                                " (window >$(c.max_score - c.back_accept), $(length(c.archive)) still archived)")
+                        end
+                    end
                 end
             end
 

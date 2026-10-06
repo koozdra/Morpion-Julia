@@ -277,3 +277,49 @@ end
   end
   @test_throws ArgumentError main(max_iterations=10, verbose=false, config_key=:bogus)
 end
+
+@testset "pruned perms are archived (best first, capped) and reintroduced when the window widens" begin
+  rng = MersenneTwister(51)
+  perms = Perm[]; index = Dict{UInt64,Perm}()
+  while length(perms) < 40
+    g = random_game(rng)[2]
+    h = points_hash(g)
+    haskey(index, h) && continue
+    p = Perm(0, UInt16[], g, h); push!(perms, p); index[h] = p
+  end
+  max_score = maximum(p.score for p in perms)
+  c = Candidate(0, perms, index, perms[1].moves, max_score, 6, 0.0, 0)
+  before = Set(p.moves_hash for p in perms)
+
+  prune_candidate!(c; archive_size=10)           # window shrinks to > max - 5
+  @test c.back_accept == 5
+  @test all(p -> p.score >= max_score - 5, c.perms)
+  @test length(c.archive) <= 10
+  @test all(p -> p.score < max_score - 5, c.archive)
+  @test issorted([p.score for p in c.archive], rev=true)
+  @test isempty(intersect(Set(p.moves_hash for p in c.archive), Set(keys(c.index))))
+
+  c.back_accept += 10                            # an idle reset widens the window
+  archived = length(c.archive)
+  back = reintroduce!(c)
+  @test sum(last, back; init=0) + length(c.archive) == archived
+  @test all(p -> p.score < max_score - c.back_accept, c.archive)
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  @test issubset(Set(keys(c.index)), before)
+  @test issorted(first.(back), rev=true)
+
+  # pruning without an archive keeps nothing
+  c2 = Candidate(0, copy(perms), copy(index), perms[1].moves, max_score, 6, 0.0, 0)
+  prune_candidate!(c2)
+  @test isempty(c2.archive)
+end
+
+@testset "main() with an archive keeps the pool and archive consistent" begin
+  Random.seed!(19)
+  c = main(max_iterations=60_000, end_search_interval=3000, debug_interval=1000, idle_reset=5,
+    improvement_step_up=20, verbose=false, initial_perms_size=10, archive_size=500)[1]
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  @test length(c.archive) <= 500
+  pool = Set(objectid(p) for p in c.perms)
+  @test !any(p -> objectid(p) in pool, c.archive)   # a perm is either in the pool or archived
+end

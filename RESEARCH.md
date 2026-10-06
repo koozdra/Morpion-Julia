@@ -55,6 +55,7 @@ Defaults as of 2026-10-04:
 | `initial_perms_size` | 100 | random perms each candidate starts with |
 | `es_mode` | `:ucb` | UCB end_search (see below) |
 | `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
+| `archive_size` | 100,000 | pruned perms are archived and put back when an idle reset widens the window (since 2026-10-06) |
 | `checkpoint_interval`, `release_idle_caches`, `cache_min_picks` | 4, true, 8 | only apply to `dna_storage=:full` |
 
 ## Selection and search dynamics
@@ -115,6 +116,24 @@ A/B at 10 min × 12 paired seeds. New options make each change possible without 
 | skew 20 | 153.4 (156.5) | +1.8 [−1.8, +5.9] | 6 / 5 / 1 |
 
 Every arm is within noise of the base: medians differ by at most 1.5 points and every interval spans zero. The per-pick yield differences above don't turn into final score, consistent with the September finding. Most of the variance is stuck runs, and they're tied to the seed, not the setting: seed 1107 stuck at 109–138 in every arm. So the selection system is on a flat optimum, and the bigger lever is probably detecting and escaping stuck runs.
+
+### Archiving pruned perms and reintroducing them (2026-10-06): **Adopted** (default `archive_size=100_000` since 2026-10-06; the A/B was within noise)
+When pruning tightens the window, perms below it used to be dropped and had to be rediscovered after the idle reset widened it again. `archive_size` keeps up to that many pruned perms per candidate (best scores first, most recently pruned first among equal scores). At each idle reset, the ones back inside the window are reintroduced, logged as `reintroduced N archived configurations: 157×12 156×30 … (window >148, M still archived)`.
+
+The idle reset only fires on a hard plateau: pruning, accepts and new bests all reset the idle counter, so the window must first shrink until nothing is accepted for `idle_reset` (128) maintenance intervals. In 30-minute runs that happened 6–11 times per run.
+
+A/B at 30 min × 12 paired seeds, 2026-10-05 defaults, archive of 100k vs none:
+
+| | Final scores | Mean (median) | Mean best at 5 / 10 / 20 / 30 min | Pool median / max | Peak RSS |
+|---|---|---|---|---|---|
+| none | 160 156 158 157 172 155 160 157 151 117 162 158 | 155.2 (157.5) | 150.2 / 151.1 / 154.0 / 155.2 | 1.6k / 20k | 371 MB |
+| archive 100k | 160 150 161 157 172 155 161 158 154 118 157 170 | 156.1 (157.5) | 149.8 / 151.8 / 154.4 / 156.1 | 2.0k / 101k | 373 MB |
+
+- **Score:** archive − none = +0.8 [−1.4, +3.4], median +0.5; better on 6 seeds, worse on 2, tied on 4.
+- **Reintroduction is large:** about 318k perms per run, roughly 36k per idle reset, briefly swelling the pool to as much as 101k perms before pruning shrinks it again.
+- **No memory cost.**
+
+Not significant. A gentler variant may be worth trying: reintroducing only the top few scores below the max, or capping how many come back per reset.
 
 ### Taboo list for long-visited perms (2026-10-02): **Rejected** (not built)
 Question: past some visit count (picks since the perm last produced an accepted child), is a perm useless and safe to drop?
