@@ -135,6 +135,8 @@ A/B at 30 min × 12 paired seeds, 2026-10-05 defaults, archive of 100k vs none:
 
 Not significant. A gentler variant may be worth trying: reintroducing only the top few scores below the max, or capping how many come back per reset.
 
+Update (2026-10-06): each idle reset now drains the archive completely. Perms inside the widened window go back to the pool, and everything still below it is dropped instead of kept (the A/B above kept them; on average ~85k were still archived at the end of a 30-minute run). This variant hasn't been A/B tested separately.
+
 ### Taboo list for long-visited perms (2026-10-02): **Rejected** (not built)
 Question: past some visit count (picks since the perm last produced an accepted child), is a perm useless and safe to drop?
 Setup: 6 seeds × 300 s, 2026-10 defaults.

@@ -466,22 +466,25 @@ function prune_candidate!(c::Candidate; archive_size::Int=0)
     c
 end
 
-# Puts back every archived perm whose score is inside the current window and
-# that isn't in the pool already; the rest stay archived. Returns the number
-# put back at each score, highest first.
+# Empties the archive: every archived perm whose score is inside the current
+# window and that isn't in the pool already goes back into the pool; the rest
+# (below the window, or rediscovered meanwhile) are dropped. Returns the number
+# put back at each score, highest first, and the number dropped below the window.
 function reintroduce!(c::Candidate)
     floor_score = c.max_score - c.back_accept
     counts = Dict{Int,Int}()
-    filter!(c.archive) do p
-        p.score >= floor_score || return true          # still below the window
-        if !haskey(c.index, p.moves_hash)
+    dropped = 0
+    for p in c.archive
+        if p.score < floor_score
+            dropped += 1
+        elseif !haskey(c.index, p.moves_hash)
             push!(c.perms, p)
             c.index[p.moves_hash] = p
             counts[p.score] = get(counts, p.score, 0) + 1
         end
-        false                                         # put back, or rediscovered meanwhile
     end
-    sort!(collect(counts), by=x -> -x[1])
+    empty!(c.archive)
+    sort!(collect(counts), by=x -> -x[1]), dropped
 end
 
 # Optional instrumentation for main(; stats=SearchStats()). One row per rollout
@@ -625,9 +628,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     default_back_accept::Int=10,
     selection_skew::Real=10,
     move_selection_skew::Real=1,
-    idle_reset::Int=64,
+    idle_reset::Int=32,
     idle_reset_step_back::Int=default_back_accept,
-    improvement_step_up::Int=100,
+    improvement_step_up::Int=10,
     initial_candidates_size::Int=1,
     # end_search wind-back depth (fraction of the source's score) and how many
     # fruitless completions in a row end each wind-back step
@@ -1043,12 +1046,12 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     c.back_accept += idle_reset_step_back
                     stats === nothing || (stats.idle_resets += 1)
                     if archive_size > 0
-                        back = reintroduce!(c)
+                        back, dropped = reintroduce!(c)
                         stats === nothing || (stats.reintroduced += sum(last, back; init=0))
-                        if verbose && !isempty(back)
-                            println("$iteration. reintroduced $(sum(last, back)) archived configurations: ",
+                        if verbose && (!isempty(back) || dropped > 0)
+                            println("$iteration. reintroduced $(sum(last, back; init=0)) archived configurations: ",
                                 join(["$(sc)×$(n)" for (sc, n) in back], " "),
-                                " (window >$(c.max_score - c.back_accept), $(length(c.archive)) still archived)")
+                                " (window >$(c.max_score - c.back_accept); dropped $dropped below it)")
                         end
                     end
                 end

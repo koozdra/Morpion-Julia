@@ -299,11 +299,13 @@ end
   @test issorted([p.score for p in c.archive], rev=true)
   @test isempty(intersect(Set(p.moves_hash for p in c.archive), Set(keys(c.index))))
 
-  c.back_accept += 10                            # an idle reset widens the window
-  archived = length(c.archive)
-  back = reintroduce!(c)
-  @test sum(last, back; init=0) + length(c.archive) == archived
-  @test all(p -> p.score < max_score - c.back_accept, c.archive)
+  c.back_accept += 2                             # an idle reset widens the window a little
+  archived = copy(c.archive)
+  back, dropped = reintroduce!(c)
+  @test isempty(c.archive)                       # drained: put back or dropped
+  @test sum(last, back; init=0) + dropped == length(archived)
+  @test dropped == count(p -> p.score < max_score - c.back_accept, archived)
+  @test all(p -> p.score >= max_score - c.back_accept, filter(p -> haskey(c.index, p.moves_hash), archived))
   @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
   @test issubset(Set(keys(c.index)), before)
   @test issorted(first.(back), rev=true)
