@@ -350,3 +350,17 @@ end
     initial_perms_size=10, window_cycle=16, window_start=20, window_shape=2)[1]
   @test c.back_accept == round(Int, 20 * (1 - 13 / 16)^2)
 end
+
+@testset "timer dwell paces later steps more slowly" begin
+  @test timer_step(5000, 1000, 16, 0) == 5
+  @test timer_step(13_000, 1000, 16, 1) == floor(Int, 16 * sqrt(13 / 16))
+  @test timer_step(16_000, 1000, 16, 1) == 0                    # reset once per cycle
+  @test all(i -> timer_step(i * 1000, 1000, 128, 0.5) >= 1, 1:127)
+  ks = [timer_step(i * 1000, 1000, 128, 1) for i in 0:127]
+  @test issorted(ks) && ks[end] <= 127
+  N = 13_000
+  Random.seed!(24)
+  c = main(max_iterations=N, end_search_interval=3000, debug_interval=1000, verbose=false,
+    initial_perms_size=10, window_cycle=16, window_start=20, window_dwell=1)[1]
+  @test c.back_accept == round(Int, 20 * (1 - floor(Int, 16 * sqrt(13 / 16)) / 16))
+end

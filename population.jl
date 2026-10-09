@@ -9,6 +9,7 @@
 # 172 UkiDTozaJmq4Mi4JQpJhYu3LPXzf7Tbzf1eV7+rOrb99//udfg
 # 175 CBMXT2TomgmTmJOEtJJqs/Uda9vn8Lz+M81ndct93r/3p9/9+0
 # 175 KyQihtyDUKLaq0EcpmqsRa/XuYvfN79c9T0t356/9+23fb5y/U
+# 176 FEBMv6lokkiL84GQw5LldzoifP3390p//WMfmu+6/f909//erg
 # 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
 # 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
 # 177 7EBET5ZlRiSWRsI5JTaVf7H1mb/z8Zf6mdnXZ7ntev+svX/vf0
@@ -660,6 +661,15 @@ function prune_below!(c::Candidate; archive_size::Int=0)
     c
 end
 
+# Step k (0..cycle-1) of the timer window at this iteration. The cycle lasts
+# `cycle` maintenance intervals; with dwell > 0 later steps last longer (step k
+# lasts in proportion to k^dwell), so the window spends more time narrow.
+function timer_step(iteration::Int, debug_interval::Int, cycle::Int, dwell::Real)
+    i = (iteration ÷ debug_interval) % cycle
+    dwell == 0 && return i
+    floor(Int, cycle * (i / cycle)^(1 / (1 + dwell)))
+end
+
 # reintroduce! plus its counter and log line, for the idle reset and the timer
 # window's reset
 function reintroduce_and_log!(c::Candidate, iteration::Int, verbose::Bool, stats)
@@ -907,7 +917,11 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     window_start::Int=20,
     # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
     # 1 narrows linearly, > 1 narrows fast and spends longer near the max
-    window_shape::Real=1)
+    window_shape::Real=1,
+    # how the timer's steps are paced: 0 = every step lasts one maintenance
+    # interval; d > 0 = step k lasts in proportion to k^d (the cycle still takes
+    # window_cycle intervals), so more time is spent near the max
+    window_dwell::Real=0)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
@@ -1102,7 +1116,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         "-"
                     end
                 verbose && println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) ",
-                    window_schedule === :timer ? "$((iteration ÷ debug_interval) % window_cycle)/$(window_cycle)" :
+                    window_schedule === :timer ? "$(timer_step(iteration, debug_interval, window_cycle, window_dwell))/$(window_cycle)" :
                     "impr:$(candidate.improvement_counter)")
 
                 perm.visits = 0
@@ -1262,7 +1276,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 if window_schedule === :timer
                     # the window sweeps from window_start below the max to the max
                     # over window_cycle maintenance intervals, then resets wide
-                    k = (iteration ÷ debug_interval) % window_cycle
+                    k = timer_step(iteration, debug_interval, window_cycle, window_dwell)
                     if k == 0
                         c.back_accept = window_start
                         stats === nothing || (stats.idle_resets += 1)
@@ -1299,7 +1313,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                     # timer: position in the window cycle; counters: idle and improvement counts
                     phase = window_schedule === :timer ?
-                            "$((iteration ÷ debug_interval) % window_cycle)/$(window_cycle)" :
+                            "$(timer_step(iteration, debug_interval, window_cycle, window_dwell))/$(window_cycle)" :
                             "idle:$(round(c.idle_counter, digits=1)) impr:$(c.improvement_counter)"
                     println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s $phase i:$(length(c.index)) $max_pack")
                 end

@@ -197,6 +197,19 @@ A/B at 30 min × 8 paired seeds around the defaults (timer 128, start 20, `es_mo
 - **Picks still need a skew:** uniform selection is clearly worse.
 - **New games:** two 177s (base and visits-only, both seed 1801) and a 175 (shape 3, seed 1805), all variants of the `CBMXT2Tom…` family; added to the header of `population.jl`.
 
+### Timer step pacing, more time at the late steps (2026-10-09): **Null**
+`window_dwell` (default 0) keeps the width linear in the timer step k but makes later steps last longer: step k lasts in proportion to k^dwell, with the cycle still 128 maintenance intervals. So the logged `k/128` moves fast through the wide steps and slowly through the narrow ones. With dwell 0.5 the window is 5 or narrower for ~35% of the cycle, with dwell 1 for ~44% (vs 25% at dwell 0). A/B at 30 min × 8 paired seeds, current defaults:
+
+| Arm | Final scores | Mean (median) | sd | Per seed vs dwell 0 [95%] | Better / worse / tied |
+|---|---|---|---|---|---|
+| dwell 0 (default) | 160 162 162 157 163 161 155 159 | 159.9 (160.5) | 2.7 | — | — |
+| dwell 0.5 | 157 159 160 156 156 164 155 158 | 158.1 (157.5) | 2.9 | −1.8 [−3.6, +0.1] | 1 / 6 / 1 |
+| dwell 1 | 159 159 159 156 157 176 158 160 | 160.5 (159.0) | 6.4 | +0.6 [−2.8, +5.2] | 3 / 5 / 0 |
+
+- **Same conclusion as `window_shape`:** spending more of the cycle near the max doesn't help on average. Dwell 0.5 is slightly worse, and dwell 1's mean is lifted by one run while it's worse on 5 of 8 seeds.
+- **Even pacing keeps runs improving later:** median last gain at minute 25.7 for dwell 0, vs 23.2 and 16.3.
+- **New game:** **176** (dwell 1, seed 1906), pack `FEBMv6lokkiL84GQw5…`, a variant of the `FEBMv6lokk…` 177 family; added to the header of `population.jl`.
+
 ### Taboo list for long-visited perms (2026-10-02): **Rejected** (not built)
 Question: past some visit count (picks since the perm last produced an accepted child), is a perm useless and safe to drop?
 Setup: 6 seeds × 300 s, 2026-10 defaults.
