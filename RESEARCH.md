@@ -44,18 +44,19 @@ If an entry stops being true (the code or defaults changed), mark it rather than
 
 ## Current state
 
-Defaults as of 2026-10-04:
+Defaults as of 2026-10-08:
 
 | Setting | Value | Note |
 |---|---|---|
 | `num_modifications` | 10 | 2–10 swaps per mutation |
 | `default_back_accept` | 10 | was 3 in late September |
 | `selection_skew` | 10 | `rand()^10` over the sorted pool |
-| `idle_reset` / `improvement_step_up` | 128 / 100 | was 512 / 10000 (2026-10-02), when pruning almost never ran and pools reached 50–100k perms; pools now stay around 1–2k |
+| `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 20 | the window narrows linearly from 20 below the max to the max over 128 maintenance intervals (12.8M iterations), then resets wide; since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)) |
+| `idle_reset` / `improvement_step_up` | 32 / 10 | only used with `window_schedule=:counters` (was 512 / 10000 on 2026-10-02, 128 / 100 on 2026-10-04) |
 | `initial_perms_size` | 100 | random perms each candidate starts with |
-| `es_mode` | `:ucb` | UCB end_search (see below) |
+| `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
 | `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
-| `archive_size` | 100,000 | pruned perms are archived and put back when an idle reset widens the window (since 2026-10-06) |
+| `archive_size` | 100,000 | pruned perms are archived and put back when the window widens again: at each timer reset (or idle reset under `:counters`); since 2026-10-06 |
 | `checkpoint_interval`, `release_idle_caches`, `cache_min_picks` | 4, true, 8 | only apply to `dna_storage=:full` |
 
 ## Selection and search dynamics
@@ -136,6 +137,31 @@ A/B at 30 min × 12 paired seeds, 2026-10-05 defaults, archive of 100k vs none:
 Not significant. A gentler variant may be worth trying: reintroducing only the top few scores below the max, or capping how many come back per reset.
 
 Update (2026-10-06): each idle reset now drains the archive completely. Perms inside the widened window go back to the pool, and everything still below it is dropped instead of kept (the A/B above kept them; on average ~85k were still archived at the end of a 30-minute run). This variant hasn't been A/B tested separately.
+
+### Escape settings, and a timer-driven window (2026-10-08): timer 128 **Adopted** (default since 2026-10-08)
+A/B at 30 min × 8 paired seeds, `es_mode=:ucb_then_mast`, 2026-10-07 defaults (`idle_reset=32`, `improvement_step_up=10`, `idle_reset_step_back=10`, `default_back_accept=10`, 1 candidate). Each arm changes one setting.
+
+New options (off by default):
+- `idle_decrement`: how much each accepted child delays the idle reset (was a hard-coded 0.1).
+- `window_schedule=:timer` with `window_cycle` and `window_start`: the window narrows linearly from `window_start` below the max to the max over `window_cycle` maintenance intervals, then resets wide (reintroducing from the archive). Counter-driven pruning and the idle reset are off, and new bests don't restart the cycle.
+
+| Arm | Final scores | Mean (median) | Mean best at 5 / 10 / 20 / 30 min | Per seed vs base [95%] | Better / worse / tied |
+|---|---|---|---|---|---|
+| base | 153 158 161 151 159 158 161 152 | 156.6 (158.0) | 149.0 / 154.1 / 156.2 / 156.6 | — | — |
+| idle 16 | 154 152 159 161 155 162 153 152 | 156.0 (154.5) | 150.6 / 153.1 / 155.1 / 156.0 | −0.6 [−4.1, +3.2] | 3 / 4 / 1 |
+| step-up 5 | 155 155 156 160 157 158 159 151 | 156.4 (156.5) | 144.5 / 154.6 / 155.8 / 156.4 | −0.2 [−2.6, +2.8] | 2 / 5 / 1 |
+| widen 20 | 155 154 156 156 162 156 157 152 | 156.0 (156.0) | 150.0 / 153.5 / 155.6 / 156.0 | −0.6 [−3.0, +1.8] | 3 / 4 / 1 |
+| back-accept 20 (widen kept at 10) | 161 162 154 157 157 157 148 156 | 156.5 (157.0) | 151.2 / 152.4 / 155.1 / 156.5 | −0.1 [−5.0, +4.1] | 4 / 4 / 0 |
+| 4 candidates | 161 160 158 168 158 158 161 157 | 160.1 (159.0) | 155.4 / 157.0 / 158.5 / 160.1 | +3.5 [−0.1, +8.0] | 4 / 2 / 2 |
+| idle decrement 0 | 157 159 156 158 157 162 153 153 | 156.9 (157.0) | 152.8 / 153.4 / 155.9 / 156.9 | +0.2 [−3.1, +3.2] | 5 / 3 / 0 |
+| timer, 32 intervals, start 20 | 155 155 157 165 177 159 159 152 | 159.9 (158.0) | 153.5 / 155.5 / 158.2 / 159.9 | +3.2 [−1.5, +8.9] | 4 / 3 / 1 |
+| **timer, 128 intervals, start 20** | 159 157 171 160 169 161 157 154 | **161.0** (159.5) | 152.0 / 152.2 / **160.5** / 161.0 | **+4.4 [+0.9, +7.8]** | **6 / 2 / 0** |
+
+- **Timer 128 is the first escape change with an interval above zero:** +4.4 [+0.9, +7.8], better on 6 of 8 seeds. Its gains come late: the mean best jumps from 152.2 at 10 min to 160.5 at 20 min, as the slow sweep plays out.
+- **The timer arms produced 4 of the 5 runs that reached 165**, including a **177** (timer 32, seed 1605) and a **171** (timer 128, seed 1603). Both were added to the header of `population.jl`.
+- **4 candidates is close behind** (+3.5 [−0.1, +8.0]).
+- **The counter tweaks are all null:** idle 16, step-up 5, widen 20, back-accept 20, idle decrement 0. The current counter values sit on a flat optimum, consistent with the selection A/B.
+- Untested next steps: timer 128 combined with 4 candidates; other cycle lengths (64, 256); start widths 15 and 30.
 
 ### Taboo list for long-visited perms (2026-10-02): **Rejected** (not built)
 Question: past some visit count (picks since the perm last produced an accepted child), is a perm useless and safe to drop?
@@ -238,6 +264,69 @@ Neighbourhoods are bigger than in September: a median of 51 in-window alternativ
 - **Exhaustive enumeration isn't an option.** Even an unoptimised version is 53× the default's total time (median 55 ms vs 4.2 ms per call, max 6.7 s), and only 30% of calls finish within 20 ms.
 
 Given that doubling end_search's time via call frequency didn't raise 30-minute scores (above), buying recall with a longer stall is unlikely to either.
+
+### Tree-search and reinforcement-learning end_search variants, head to head (2026-10-08): measured offline
+300 end_search calls captured from 6 × 10-minute runs (2026-10-07 defaults: `idle_reset=32`, `improvement_step_up=10`, packed storage, archive). Every variant ran on the same sources one after another; the two persistent variants ran on every call in order and were scored on the same 300. Ground truth (exhaustive, 25% window) was available for 287 calls, with a median of 34 reachable in-window variants per call (mean 75).
+
+Variants, all keyed and windowed like `end_search`:
+- **NMCS** (nested Monte Carlo search): at each step try every legal move with a random completion (level 1) or a level-1 search (level 2), and follow the best sequence seen, starting from the source's own continuation.
+- **NRPA**: warm-started level-2 nested rollout policy adaptation (`end_search_nrpa`), repeated from random depths of 5–50% until a time budget.
+- **GNRPA conflict prior**: NRPA plus a bias penalising moves that compete with other legal lines for the same dot.
+- **NRPA context codes**: a move's weight depends on the previous move (sparse policy).
+- **NRPA persistent**: one policy kept across calls, moved towards every continuation that beat the source.
+- **UCB + MAST**: the current UCB end_search, with completions favouring lines whose rollouts averaged longer games (move-average sampling); optionally kept across calls.
+
+| Variant | Time | Variants found | Recall (per call / pooled) | All found | Beats source | Beats max | Reaches best* |
+|---|---|---|---|---|---|---|---|
+| UCB (current) | 1.00× | 34.2 | 0.54 / 0.43 | 14% | 45.3% | 1.33% | 59.1% |
+| UCB, stall 8000 | 3.75× | 42.2 | 0.61 / 0.52 | 19% | 49.3% | 1.33% | 67.1% |
+| UCB + MAST | 1.58× | 35.9 | 0.58 / 0.45 | 15% | 47.7% | 1.33% | 64.0% |
+| UCB + MAST, stall 500 | 0.39× | 29.3 | 0.52 / 0.37 | 13% | 46.3% | 1.33% | 60.4% |
+| UCB + MAST, persistent | 1.06× | 13.4 | 0.41 / 0.17 | 13% | 40.7% | 1.33% | 48.2% |
+| NMCS level 1, 25% | 0.03× | 8.6 | 0.31 / 0.11 | 9% | 33.3% | 1.00% | 32.9% |
+| NMCS level 1, repeated | 1.01× | 27.3 | 0.50 / 0.31 | 16% | 44.3% | 2.00% | 55.5% |
+| NMCS level 2, 25% | 1.00× | 32.1 | 0.60 / 0.40 | 18% | 49.0% | 1.33% | 62.2% |
+| NRPA | 1.03× | 17.5 | 0.40 / 0.18 | 12% | 48.7% | 2.00% | 61.6% |
+| NRPA, 4× budget | 4.07× | 41.4 | 0.60 / 0.36 | 18% | 64.3% | 3.00% | 86.0% |
+| NRPA persistent | 1.23× | 19.2 | 0.39 / 0.18 | 9% | 59.0% | 1.67% | 77.4% |
+| GNRPA conflict prior | 1.06× | 17.5 | 0.38 / 0.18 | 11% | 48.7% | 1.67% | 58.5% |
+| NRPA context codes | 1.06× | 14.3 | 0.34 / 0.16 | 11% | 32.0% | 1.33% | 32.9% |
+
+\* Reaches the best completion possible within the 25% window, among calls where that beats the source.
+
+Back-to-back combinations (union of results, times added):
+
+| Combination | Time | Variants found | Pooled recall | Beats source | Beats max | Reaches best* |
+|---|---|---|---|---|---|---|
+| UCB + NMCS level 1 | 1.03× | 34.2 | 0.43 | 45.3% | 1.33% | 59.1% |
+| UCB + (UCB + MAST, stall 500) | 1.39× | 41.1 | 0.51 | 48.7% | 1.33% | 68.9% |
+| (UCB + MAST, stall 500) + NRPA | 1.42× | 36.9 | 0.42 | 56.0% | 2.33% | 77.4% |
+| UCB + NRPA | 2.03× | 41.2 | 0.47 | 55.0% | 2.33% | 76.2% |
+
+Findings:
+- **Completeness and finding better games pull in different directions.** Random-rollout methods (UCB, MAST) find the most variants; policy-learning methods (NRPA) find fewer variants but improve on the source far more often.
+- **MAST playouts are the most efficient way to find variants:** with stall 500, 86% of the current method's variants in 39% of the time.
+- **Cross-call policy learning works:** persistent NRPA beats plain NRPA (59% vs 49% of calls improve on the source; 77% vs 62% reach the best possible) at similar time. Persistent MAST does worse: its stale statistics narrow the completions.
+- **The context codes and the conflict prior don't help.**
+- **Combinations get the best of both:** UCB plus MAST(stall 500) matches stall-8000 completeness (41 variants, recall 0.51) at 37% of its time. MAST(stall 500) plus NRPA finds more variants than the current method (37 vs 34) and improves on the source far more often (56% vs 45%; reaches best 77% vs 59%), at 1.42× the end_search time.
+
+A first 30-minute A/B round of plain NRPA vs UCB (4 seeds, stopped early) was inconclusive: UCB 156 162 159 157, NRPA (6 ms) 152 158 170 157, NRPA (24 ms) 158 150 160 157.
+
+### Combined end_search modes, end to end (2026-10-08): **Null / Rejected**
+A/B at 30 min × 12 paired seeds, 2026-10-07 defaults. New modes (off by default): `es_mode=:ucb_then_mast` (UCB, then UCB with MAST completions at `es_mast_stall_rollouts=500`, results merged) and `:mast_then_nrpa` (that MAST pass, then `end_search_nrpa` at 6 ms).
+
+| Arm | Final scores | Mean (median) | sd | Mean best at 5 / 10 / 20 / 30 min | Time in end_search | Calls raising the max |
+|---|---|---|---|---|---|---|
+| UCB (current) | 159 152 162 158 172 160 161 154 156 176 157 162 | 160.8 (159.5) | 7.0 | 152.5 / 155.2 / 159.2 / 160.8 | 2.9% | 19.3 |
+| UCB then MAST | 158 159 157 160 159 161 161 158 156 161 160 160 | 159.2 (159.5) | 1.6 | 155.8 / 156.8 / 158.7 / 159.2 | 5.2% | 19.8 |
+| MAST then NRPA | 159 161 159 174 141 157 160 117 158 157 157 157 | 154.8 (157.5) | 13.9 | 150.3 / 151.8 / 154.0 / 154.8 | 4.1% | 24.7 |
+
+Per seed vs UCB: UCB then MAST −1.6 [−5.3, +1.7] (median 0; better 5, worse 5, tied 2); MAST then NRPA −6.0 [−14.9, +1.9] (median −2; better 3, worse 7, tied 2).
+
+- **The offline gains didn't carry over,** again. MAST then NRPA raised the max more often (24.7 vs 19.3 calls per run) yet finished lower, with two stuck runs (141, 117) alongside a 174.
+- **UCB then MAST was remarkably consistent** (156–161 on every seed, never stuck), but it never broke out either: no run above 161. It's ahead early (155.8 vs 152.5 at 5 min) and behind by 30 min.
+- **UCB alone produced the two best runs: 172 and 176.** The 176 (seed 1510) wasn't saved, because the A/B runner only recorded scores. Runners should save `max_moves` from now on.
+- Recommendation was to keep `es_mode=:ucb`. Switched the default to `:ucb_then_mast` on 2026-10-08 anyway, for its consistency: no stuck runs, sd 1.6.
 
 ## Neighbourhood structure
 

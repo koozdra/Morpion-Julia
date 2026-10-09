@@ -125,3 +125,57 @@ end
   @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
   @test_throws ArgumentError main(max_iterations=10, verbose=false, es_mode=:bogus)
 end
+
+@testset "end_search_nrpa results are valid, in-window, and keyed correctly" begin
+  back_accept = 5
+  for (name, source) in recall_sources()
+    Random.seed!(2028)
+    results = end_search_nrpa(source, back_accept; budget_s=0.01)
+    @test !isempty(results)
+    for (h, moves) in results
+      @test (verify(Morpion(moves)); true)
+      @test length(moves) > length(source) - back_accept
+      @test points_hash(moves) == h
+    end
+    for (h, moves) in end_search_nrpa(source, back_accept; budget_s=0.005, lines=true)
+      @test lines_hash(moves) == h
+    end
+  end
+end
+
+@testset "main() runs with the NRPA end_search" begin
+  Random.seed!(6)
+  c = main(max_iterations=20_000, end_search_interval=2000, debug_interval=1000,
+    verbose=false, initial_perms_size=10, es_mode=:nrpa)[1]
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  @test (verify(Morpion(c.max_moves)); true)
+end
+
+@testset "end_search_ucb with MAST completions" begin
+  back_accept = 5
+  for (name, source) in recall_sources()
+    Random.seed!(2029)
+    results = end_search_ucb(source, back_accept; mast=true)
+    @test !isempty(results)
+    for (h, moves) in results
+      @test (verify(Morpion(moves)); true)
+      @test length(moves) > length(source) - back_accept
+      @test points_hash(moves) == h
+    end
+  end
+  # MAST off gives exactly the uniform completions
+  src = recall_sources()[1][2]
+  Random.seed!(3); a = end_search_ucb(src, 5)
+  Random.seed!(3); b = end_search_ucb(src, 5; mast=false)
+  @test a == b
+end
+
+@testset "main() runs with the combined end_search modes" begin
+  for mode in (:ucb_then_mast, :mast_then_nrpa)
+    Random.seed!(7)
+    c = main(max_iterations=20_000, end_search_interval=2000, debug_interval=1000,
+      verbose=false, initial_perms_size=10, es_mode=mode)[1]
+    @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+    @test (verify(Morpion(c.max_moves)); true)
+  end
+end

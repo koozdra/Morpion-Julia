@@ -1,20 +1,22 @@
 # 166 HYhAHqWtBWCUVGkZRRxasI/rdT+39uUf9d22ap+y7/fX7/3+
-# 170 EykgD3IyGWSDsFAhMXIsPeav6+ju7V07eqfruddfv/nfO///6
 # 170 Ey0gDuBpwaSCtRHDsNrbIXYUQ//n9ev7Ivz3VX37/5/rf//9
+# 170 EykgD3IyGWSDsFAhMXIsPeav6+ju7V07eqfruddfv/nfO///6
 # 170 qiQRjpmQsgU2CKFJbAAfUVaF5deL//zru/vbens3yfr31z+/trw
+# 171 0yAij1VlSSRWksIzgzcdfpnkXTvX/Jn+meaz21Z+rf/1sX59/g
 # 171 F0wgDolGsg5l0kkIno6jbiovx31/l5b3v42y8je9dvt2d//vvQ
-# 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
 # 172 AENMhclbKcGxHhKhtGnBJdfX1DeJf7L6X+vt09fU7/Ptcv//va
+# 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
 # 172 UkiDTozaJmq4Mi4JQpJhYu3LPXzf7Tbzf1eV7+rOrb99//udfg
 # 175 KyQihtyDUKLaq0EcpmqsRa/XuYvfN79c9T0t356/9+23fb5y/U
 # 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
+# 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
+# 177 AYOOj1VpKGCndhSsQa0p/uNfNrf88av8Zs1nae523r93Hz/3++
 # 177 AYOOj1VpKGCndhSsQa1s+k3ft/usr69mLd/Su+3f+7Z9/+3u4
-# 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
+# 177 CBMXT2TomgmTmJcpVpeTTr589vL/jW/hnms7Z3O29fu5ef9/3w
 # 177 FEBMv6lokkiL84GQw9LndS5++33Kr9d8RvfNu/Nv/5zff/b3W
 # 177 FEBMv6lokkqKS4cwzB4f1Vc/fb7lr9d8RvfNu/Nv/p5vv/t7b
-# 177 CBMXT2TomgmTmJcpVpeTTr589vL/jW/hnms7Z3O29fu5ef9/3w
+# 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
 # 177 IiAjf2jokjJLE4Zwyk4vWzYlXn77f1lf/be7tN7f/p5fv/t7X
-# 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 # 178 7EBET5ZlRiSHYc0gSqEaxn9OfXDfr79Vak78WKOe7yv//Wm//9v0
 
@@ -131,6 +133,61 @@ function ucb_completion!(board, possible_moves, suffix, from_board, from_possibl
     h
 end
 
+# Move-average sampling (MAST) for end_search_ucb's completions: per line, the
+# mean final game length of the completions that drew it. A MAST completion
+# picks each move by a Gibbs distribution over those means (temperature tau);
+# lines not seen yet count as good as the best seen.
+mutable struct MASTStats
+    sum::Vector{Float64}
+    cnt::Vector{Float64}
+    tau::Float64
+    w::Vector{Float64}          # scratch for move weights
+end
+
+MASTStats(tau::Real=1.0) = MASTStats(zeros(46 * 46 * 4), zeros(46 * 46 * 4), tau, Float64[])
+
+# ucb_completion! with MAST move choice; `base_len` is the length of the game
+# before the completion. Updates the statistics with the finished game.
+function mast_completion!(mast::MASTStats, board, possible_moves, suffix, from_board, from_possible,
+    h::UInt64, base_len::Int, lines::Bool)
+    copyto!(board, from_board)
+    empty!(possible_moves)
+    append!(possible_moves, from_possible)
+    empty!(suffix)
+    w = mast.w
+    while !isempty(possible_moves)
+        resize!(w, length(possible_moves))
+        qmax = -Inf
+        @inbounds for i in eachindex(possible_moves)
+            c = dna_index(possible_moves[i])
+            w[i] = mast.cnt[c] > 0 ? mast.sum[c] / mast.cnt[c] : NaN
+            isnan(w[i]) || (qmax = max(qmax, w[i]))
+        end
+        z = 0.0
+        @inbounds for i in eachindex(possible_moves)
+            w[i] = exp((isnan(w[i]) || qmax == -Inf ? 0.0 : w[i] - qmax) / mast.tau)
+            z += w[i]
+        end
+        r = rand() * z
+        i = 1
+        @inbounds while i < length(possible_moves) && r > w[i]
+            r -= w[i]
+            i += 1
+        end
+        move = possible_moves[i]
+        push!(suffix, move)
+        make_move(board, move, possible_moves)
+        h ⊻= move_key(move, lines)
+    end
+    final = base_len + length(suffix)
+    @inbounds for m in suffix
+        c = dna_index(m)
+        mast.sum[c] += final
+        mast.cnt[c] += 1
+    end
+    h
+end
+
 # end_search variant that treats each wind-back depth as a bandit arm. The game
 # is replayed once, keeping the position before each of its last
 # step_back_fraction*score moves; one pull of an arm is one random completion
@@ -140,9 +197,11 @@ end
 # fixed stall per depth. Stops once stall_rollouts average completions' worth of
 # moves in a row find nothing new (or index_cap results are collected).
 # Returns the same kind of index as end_search (lines = true keys it by lines).
+# mast = true draws completions with move-average sampling (see MASTStats)
+# instead of uniformly.
 function end_search_ucb(moves::Array{Move,1}, back_accept;
     step_back_fraction::Real=0.25, stall_rollouts::Int=2000, index_cap::Int=1000,
-    exploration::Real=0.1, warmup::Int=2, lines::Bool=false)
+    exploration::Real=0.1, warmup::Int=2, lines::Bool=false, mast::Bool=false)
     score = length(moves)
     depth = floor(Int, score * step_back_fraction)
     index = Dict{UInt64,Array{Move,1}}()
@@ -178,6 +237,7 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
     eval_board = zeros(UInt8, 46 * 46)
     eval_possible_moves = Move[]
     eval_suffix = Move[]
+    stats = mast ? MASTStats() : nothing
 
     k = 0
     while true
@@ -197,8 +257,11 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
             end
         end
 
-        h = ucb_completion!(eval_board, eval_possible_moves, eval_suffix,
-            boards[k], possibles[k], prefix_hashes[k], lines)
+        h = stats === nothing ?
+            ucb_completion!(eval_board, eval_possible_moves, eval_suffix,
+                boards[k], possibles[k], prefix_hashes[k], lines) :
+            mast_completion!(stats, eval_board, eval_possible_moves, eval_suffix,
+                boards[k], possibles[k], prefix_hashes[k], score - k, lines)
         played = length(eval_suffix)
         found = score - k + played > score - back_accept && !haskey(index, h)
         found && (index[h] = vcat(moves[1:(score-k)], eval_suffix))
@@ -213,6 +276,127 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
     end
 
     index
+end
+
+# end_search by nested rollout policy adaptation (NRPA). Each run steps back to
+# a random depth (a fraction of the source's length drawn from depth_range) and
+# searches from there to the end of the game: level-0 searches are playouts
+# whose moves are drawn by a softmax over per-line weights; a level-n search
+# runs `iterations` level-(n-1) searches, each time moving the weights towards
+# the best sequence found so far. The weights start `warm` adaptation steps
+# towards the source's own continuation, so playouts begin near it. Runs repeat
+# until `budget_s` seconds are spent. Returns every distinct completion seen
+# that scores above length(moves) - back_accept, keyed like end_search.
+mutable struct NRPARun
+    root_board::Vector{UInt8}
+    root_possible::Vector{Move}
+    root_hash::UInt64
+    prefix::Vector{Move}        # the source's moves before the root
+    floor_score::Int
+    lines::Bool
+    board::Vector{UInt8}        # scratch
+    possible::Vector{Move}
+    weights::Vector{Float64}    # scratch for playout probabilities
+    results::Dict{UInt64,Vector{Move}}
+    deadline::Float64
+end
+
+function nrpa_playout!(run::NRPARun, policy::Vector{Float64})
+    board = run.board
+    possible = run.possible
+    copyto!(board, run.root_board)
+    empty!(possible)
+    append!(possible, run.root_possible)
+    seq = Move[]
+    h = run.root_hash
+    w = run.weights
+    while !isempty(possible)
+        resize!(w, length(possible))
+        z = 0.0
+        @inbounds for i in eachindex(possible)
+            w[i] = exp(policy[dna_index(possible[i])])
+            z += w[i]
+        end
+        r = rand() * z
+        i = 1
+        @inbounds while i < length(possible) && r > w[i]
+            r -= w[i]
+            i += 1
+        end
+        m = possible[i]
+        push!(seq, m)
+        make_move(board, m, possible)
+        h ⊻= move_key(m, run.lines)
+    end
+    if length(run.prefix) + length(seq) > run.floor_score && !haskey(run.results, h)
+        run.results[h] = vcat(run.prefix, seq)
+    end
+    seq
+end
+
+# A copy of `policy` moved towards `seq` (replayed from the root): +alpha on
+# each chosen move, -alpha times its softmax probability on every legal move.
+function nrpa_adapt(run::NRPARun, policy::Vector{Float64}, seq::Vector{Move}; alpha::Float64=1.0)
+    adapted = copy(policy)
+    board = run.board
+    possible = run.possible
+    copyto!(board, run.root_board)
+    empty!(possible)
+    append!(possible, run.root_possible)
+    for m in seq
+        z = 0.0
+        @inbounds for p in possible
+            z += exp(policy[dna_index(p)])
+        end
+        @inbounds for p in possible
+            c = dna_index(p)
+            adapted[c] -= alpha * exp(policy[c]) / z
+        end
+        adapted[dna_index(m)] += alpha
+        make_move(board, m, possible)
+    end
+    adapted
+end
+
+function nrpa_level(run::NRPARun, level::Int, policy::Vector{Float64}, iterations::Int)
+    level == 0 && return nrpa_playout!(run, policy)
+    best = Move[]
+    for _ in 1:iterations
+        seq = nrpa_level(run, level - 1, policy, iterations)
+        length(seq) >= length(best) && (best = seq)
+        policy = nrpa_adapt(run, policy, best)
+        time() > run.deadline && break
+    end
+    best
+end
+
+function end_search_nrpa(moves::Array{Move,1}, back_accept;
+    level::Int=2, iterations::Int=20, warm::Int=3, depth_range=(0.05, 0.5),
+    budget_s::Real=0.006, lines::Bool=false)
+    score = length(moves)
+    results = Dict{UInt64,Array{Move,1}}()
+    deadline = time() + budget_s
+    while true
+        fraction = depth_range[1] + rand() * (depth_range[2] - depth_range[1])
+        depth = clamp(floor(Int, score * fraction), 1, score)
+        board = initial_board()
+        possible = initial_moves()
+        h = UInt64(0)
+        for m in moves[1:score-depth]
+            make_move(board, m, possible)
+            h ⊻= move_key(m, lines)
+        end
+        run = NRPARun(board, possible, h, moves[1:score-depth], score - back_accept, lines,
+            zeros(UInt8, 46 * 46), Move[], Float64[], results, deadline)
+        policy = zeros(46 * 46 * 4)
+        continuation = moves[score-depth+1:end]
+        for _ in 1:warm
+            policy = nrpa_adapt(run, policy, continuation)
+        end
+        nrpa_level(run, level, policy, iterations)
+        time() > deadline && break
+    end
+    results
 end
 
 # DNA for a perm stored as moves only (main's dna_storage=:moves), written into
@@ -443,6 +627,12 @@ function prune_candidate!(c::Candidate; archive_size::Int=0)
     c.idle_counter = 0
 
     c.back_accept = max(0, c.back_accept - 1)
+    prune_below!(c; archive_size=archive_size)
+end
+
+# Drops (and archives, up to archive_size) every perm below the current window
+# max_score - back_accept.
+function prune_below!(c::Candidate; archive_size::Int=0)
     filter!(c.perms) do perm
         if perm.score < c.max_score - c.back_accept
             delete!(c.index, perm.moves_hash)
@@ -464,6 +654,18 @@ function prune_candidate!(c::Candidate; archive_size::Int=0)
     end
 
     c
+end
+
+# reintroduce! plus its counter and log line, for the idle reset and the timer
+# window's reset
+function reintroduce_and_log!(c::Candidate, iteration::Int, verbose::Bool, stats)
+    back, dropped = reintroduce!(c)
+    stats === nothing || (stats.reintroduced += sum(last, back; init=0))
+    if verbose && (!isempty(back) || dropped > 0)
+        println("$iteration. reintroduced $(sum(last, back; init=0)) archived configurations: ",
+            join(["$(sc)×$(n)" for (sc, n) in back], " "),
+            " (window >$(c.max_score - c.back_accept); dropped $dropped below it)")
+    end
 end
 
 # Empties the archive: every archived perm whose score is inside the current
@@ -636,9 +838,14 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # fruitless completions in a row end each wind-back step
     es_step_back_fraction::Real=0.25,
     es_stall_cut_off::Int=200,
-    # :ucb (end_search_ucb, which stops after es_ucb_stall_rollouts) or
-    # :sequential (the original end_search, which uses es_stall_cut_off)
-    es_mode::Symbol=:ucb,
+    # :ucb (end_search_ucb, which stops after es_ucb_stall_rollouts), :nrpa
+    # (end_search_nrpa, a tree search; see the es_nrpa_* settings), two
+    # back-to-back combinations whose results are merged -- :ucb_then_mast
+    # (end_search_ucb, then end_search_ucb with MAST completions stopping after
+    # es_mast_stall_rollouts) and :mast_then_nrpa (that MAST search, then
+    # end_search_nrpa) -- or :sequential (the original end_search, which uses
+    # es_stall_cut_off)
+    es_mode::Symbol=:ucb_then_mast,
     es_ucb_stall_rollouts::Int=2000,
     initial_perms_size::Int=100,
     # rollouts resume from a checkpoint of the parent's game every this many
@@ -674,10 +881,31 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     new_best_first::Bool=false,
     # keep up to this many pruned perms per candidate and put them back when the
     # idle reset widens the window (0 = pruned perms are dropped)
-    archive_size::Int=100_000)
-    es_mode in (:sequential, :ucb) || throw(ArgumentError("es_mode must be :sequential or :ucb, got $es_mode"))
+    archive_size::Int=100_000,
+    # es_mode = :nrpa settings: NRPA level, iterations per level, warm-start
+    # adaptations towards the source, and seconds per end_search call
+    es_nrpa_level::Int=2,
+    es_nrpa_iterations::Int=20,
+    es_nrpa_warm::Int=3,
+    es_nrpa_budget::Real=0.006,
+    # stall of the MAST stage in :ucb_then_mast and :mast_then_nrpa
+    es_mast_stall_rollouts::Int=500,
+    # how much each accepted child reduces the idle counter (the idle reset
+    # fires once the counter, +1 per maintenance interval, reaches idle_reset)
+    idle_decrement::Real=0.1,
+    # how the acceptance window moves: :counters (pruning after
+    # improvement_step_up improvements, widening at idle resets, reset on a new
+    # best) or :timer (sweeps from window_start below the max to the max over
+    # window_cycle maintenance intervals, then resets wide; new bests keep the
+    # cycle going)
+    window_schedule::Symbol=:timer,
+    window_cycle::Int=128,
+    window_start::Int=20)
+    es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
+        throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
     config_key in (:points, :lines) || throw(ArgumentError("config_key must be :points or :lines, got $config_key"))
+    window_schedule in (:counters, :timer) || throw(ArgumentError("window_schedule must be :counters or :timer, got $window_schedule"))
     sort_rotation in (:alternate, :score, :visits) || throw(ArgumentError("sort_rotation must be :alternate, :score or :visits, got $sort_rotation"))
     lines_key = config_key === :lines
     perm_length = 46 * 46 * 4
@@ -843,7 +1071,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             verbose && println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
             stats === nothing || (stats_outcome = OUTCOME_BEST)
             candidate.idle_counter = 0
-            candidate.back_accept = default_back_accept
+            window_schedule === :counters && (candidate.back_accept = default_back_accept)
 
 
         elseif eval_score >= (candidate.max_score - candidate.back_accept)
@@ -870,7 +1098,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                 perm.visits = 0
 
-                candidate.idle_counter = max(0, candidate.idle_counter - 0.1)
+                candidate.idle_counter = max(0, candidate.idle_counter - idle_decrement)
                 if eval_score > (candidate.max_score - candidate.back_accept)
 
                     candidate.improvement_counter += 1
@@ -933,6 +1161,19 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 results = if es_mode === :ucb
                     end_search_ucb(es_source, 5;
                         step_back_fraction=es_step_back_fraction, stall_rollouts=es_ucb_stall_rollouts, lines=lines_key)
+                elseif es_mode === :nrpa
+                    end_search_nrpa(es_source, 5; level=es_nrpa_level, iterations=es_nrpa_iterations,
+                        warm=es_nrpa_warm, budget_s=es_nrpa_budget, lines=lines_key)
+                elseif es_mode === :ucb_then_mast
+                    merge!(end_search_ucb(es_source, 5; step_back_fraction=es_step_back_fraction,
+                            stall_rollouts=es_ucb_stall_rollouts, lines=lines_key),
+                        end_search_ucb(es_source, 5; step_back_fraction=es_step_back_fraction,
+                            stall_rollouts=es_mast_stall_rollouts, lines=lines_key, mast=true))
+                elseif es_mode === :mast_then_nrpa
+                    merge!(end_search_ucb(es_source, 5; step_back_fraction=es_step_back_fraction,
+                            stall_rollouts=es_mast_stall_rollouts, lines=lines_key, mast=true),
+                        end_search_nrpa(es_source, 5; level=es_nrpa_level, iterations=es_nrpa_iterations,
+                            warm=es_nrpa_warm, budget_s=es_nrpa_budget, lines=lines_key))
                 else
                     end_search(es_source, 5;
                         step_back_fraction=es_step_back_fraction, stall_cut_off=es_stall_cut_off, lines=lines_key)
@@ -964,7 +1205,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         verbose && println("$iteration. $(es_score) -> $( end_search_candidate.max_score) ###### $(end_search_candidate.max_score)")
 
                         end_search_candidate.idle_counter = 0
-                        end_search_candidate.back_accept = default_back_accept
+                        window_schedule === :counters && (end_search_candidate.back_accept = default_back_accept)
                         es_best += 1
 
                     elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !is_in_index
@@ -978,7 +1219,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         end_search_candidate.index[es_moves_hash] = new_perm
                         es_accepted += 1
 
-                        end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - 0.1)
+                        end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - idle_decrement)
                         if es_score > (end_search_candidate.max_score - end_search_candidate.back_accept)
 
                             end_search_candidate.improvement_counter += 1
@@ -1009,7 +1250,19 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
 
             for c in sort(candidates, by=(c -> c.max_score))
-                if c.improvement_counter >= improvement_step_up
+                if window_schedule === :timer
+                    # the window sweeps from window_start below the max to the max
+                    # over window_cycle maintenance intervals, then resets wide
+                    k = (iteration ÷ debug_interval) % window_cycle
+                    if k == 0
+                        c.back_accept = window_start
+                        stats === nothing || (stats.idle_resets += 1)
+                        archive_size > 0 && reintroduce_and_log!(c, iteration, verbose, stats)
+                    else
+                        c.back_accept = round(Int, window_start * (1 - k / window_cycle))
+                        prune_below!(c; archive_size=archive_size)
+                    end
+                elseif c.improvement_counter >= improvement_step_up
                     prune_candidate!(c; archive_size=archive_size)
                 end
 
@@ -1038,6 +1291,8 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
 
 
+                window_schedule === :timer && continue   # no idle reset: the timer widens
+
                 c.idle_counter += 1
 
                 if c.idle_counter >= idle_reset
@@ -1045,15 +1300,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     c.idle_counter = 0
                     c.back_accept += idle_reset_step_back
                     stats === nothing || (stats.idle_resets += 1)
-                    if archive_size > 0
-                        back, dropped = reintroduce!(c)
-                        stats === nothing || (stats.reintroduced += sum(last, back; init=0))
-                        if verbose && (!isempty(back) || dropped > 0)
-                            println("$iteration. reintroduced $(sum(last, back; init=0)) archived configurations: ",
-                                join(["$(sc)×$(n)" for (sc, n) in back], " "),
-                                " (window >$(c.max_score - c.back_accept); dropped $dropped below it)")
-                        end
-                    end
+                    archive_size > 0 && reintroduce_and_log!(c, iteration, verbose, stats)
                 end
             end
 

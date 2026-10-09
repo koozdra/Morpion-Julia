@@ -325,3 +325,20 @@ end
   pool = Set(objectid(p) for p in c.perms)
   @test !any(p -> objectid(p) in pool, c.archive)   # a perm is either in the pool or archived
 end
+
+@testset "timer window schedule sweeps from wide to the max, then resets" begin
+  for N in (13_000, 22_000)          # last maintenance mid-cycle
+    Random.seed!(21)
+    c = main(max_iterations=N, end_search_interval=3000, debug_interval=1000, verbose=false,
+      initial_perms_size=10, window_schedule=:timer, window_cycle=8, window_start=20)[1]
+    k = (N ÷ 1000) % 8
+    expected = k == 0 ? 20 : round(Int, 20 * (1 - k / 8))
+    @test c.back_accept == expected
+    @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+    k == 0 || @test all(p -> p.score >= c.max_score - c.back_accept || p.score == c.max_score, c.perms)
+  end
+  Random.seed!(22)
+  c = main(max_iterations=10_000, debug_interval=1000, verbose=false, initial_perms_size=10, idle_decrement=0.0)[1]
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, window_schedule=:bogus)
+end
