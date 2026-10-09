@@ -342,3 +342,11 @@ end
   @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
   @test_throws ArgumentError main(max_iterations=10, verbose=false, window_schedule=:bogus)
 end
+
+@testset "timer window shape skews time towards narrow windows" begin
+  N = 13_000                          # last maintenance at k = 13 of 16
+  Random.seed!(23)
+  c = main(max_iterations=N, end_search_interval=3000, debug_interval=1000, verbose=false,
+    initial_perms_size=10, window_cycle=16, window_start=20, window_shape=2)[1]
+  @test c.back_accept == round(Int, 20 * (1 - 13 / 16)^2)
+end

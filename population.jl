@@ -7,12 +7,16 @@
 # 172 AENMhclbKcGxHhKhtGnBJdfX1DeJf7L6X+vt09fU7/Ptcv//va
 # 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
 # 172 UkiDTozaJmq4Mi4JQpJhYu3LPXzf7Tbzf1eV7+rOrb99//udfg
+# 175 CBMXT2TomgmTmJOEtJJqs/Uda9vn8Lz+M81ndct93r/3p9/9+0
 # 175 KyQihtyDUKLaq0EcpmqsRa/XuYvfN79c9T0t356/9+23fb5y/U
 # 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
 # 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
+# 177 7EBET5ZlRiSWRsI5JTaVf7H1mb/z8Zf6mdnXZ7ntev+svX/vf0
 # 177 AYOOj1VpKGCndhSsQa0p/uNfNrf88av8Zs1nae523r93Hz/3++
 # 177 AYOOj1VpKGCndhSsQa1s+k3ft/usr69mLd/Su+3f+7Z9/+3u4
 # 177 CBMXT2TomgmTmJcpVpeTTr589vL/jW/hnms7Z3O29fu5ef9/3w
+# 177 CBMXT2TomgmTmJcpVpeTTr589vL/jWvozzWdk7vVtr93T1/3++
+# 177 CBMXT2TwmgiXeiKuAq0l/epfOzf88a36ZZ1nad3q21+7l5/7/fA
 # 177 FEBMv6lokkiL84GQw9LndS5++33Kr9d8RvfNu/Nv/5zff/b3W
 # 177 FEBMv6lokkqKS4cwzB4f1Vc/fb7lr9d8RvfNu/Nv/p5vv/t7b
 # 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
@@ -876,7 +880,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # how often each pool is re-sorted for selection, and which orders are used:
     # :alternate (score order, then visits order, ...), :score or :visits
     sort_interval::Int=debug_interval,
-    sort_rotation::Symbol=:alternate,
+    sort_rotation::Symbol=:visits,
     # put each new best at the front of its pool instead of the back
     new_best_first::Bool=false,
     # keep up to this many pruned perms per candidate and put them back when the
@@ -900,7 +904,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # cycle going)
     window_schedule::Symbol=:timer,
     window_cycle::Int=128,
-    window_start::Int=20)
+    window_start::Int=20,
+    # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
+    # 1 narrows linearly, > 1 narrows fast and spends longer near the max
+    window_shape::Real=1)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
@@ -1094,7 +1101,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     else
                         "-"
                     end
-                verbose && println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) impr:$(candidate.improvement_counter)")
+                verbose && println("$iteration. $perm_score ($(perm.visits)) $arrow_symbol> $eval_score $(candidate.max_score) i:$(length(candidate.index)) ",
+                    window_schedule === :timer ? "$((iteration ÷ debug_interval) % window_cycle)/$(window_cycle)" :
+                    "impr:$(candidate.improvement_counter)")
 
                 perm.visits = 0
 
@@ -1259,7 +1268,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         stats === nothing || (stats.idle_resets += 1)
                         archive_size > 0 && reintroduce_and_log!(c, iteration, verbose, stats)
                     else
-                        c.back_accept = round(Int, window_start * (1 - k / window_cycle))
+                        c.back_accept = window_shape == 1 ?
+                                        round(Int, window_start * (1 - k / window_cycle)) :
+                                        round(Int, window_start * (1 - k / window_cycle)^window_shape)
                         prune_below!(c; archive_size=archive_size)
                     end
                 elseif c.improvement_counter >= improvement_step_up
@@ -1286,7 +1297,11 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 if should_print
                     max_pack = generate_pack(c.max_moves)
 
-                    println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s idle:$(round(c.idle_counter, digits=1)) i:$(length(c.index)) impr:$(c.improvement_counter) $max_pack")
+                    # timer: position in the window cycle; counters: idle and improvement counts
+                    phase = window_schedule === :timer ?
+                            "$((iteration ÷ debug_interval) % window_cycle)/$(window_cycle)" :
+                            "idle:$(round(c.idle_counter, digits=1)) impr:$(c.improvement_counter)"
+                    println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s $phase i:$(length(c.index)) $max_pack")
                 end
 
 

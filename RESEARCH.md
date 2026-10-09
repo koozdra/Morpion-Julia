@@ -51,6 +51,7 @@ Defaults as of 2026-10-08:
 | `num_modifications` | 10 | 2–10 swaps per mutation |
 | `default_back_accept` | 10 | was 3 in late September |
 | `selection_skew` | 10 | `rand()^10` over the sorted pool |
+| `sort_rotation` | `:visits` | the pool is re-sorted by fewest visits only (the score-ordered phase was redundant under the timer); was `:alternate` until 2026-10-08 |
 | `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 20 | the window narrows linearly from 20 below the max to the max over 128 maintenance intervals (12.8M iterations), then resets wide; since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)) |
 | `idle_reset` / `improvement_step_up` | 32 / 10 | only used with `window_schedule=:counters` (was 512 / 10000 on 2026-10-02, 128 / 100 on 2026-10-04) |
 | `initial_perms_size` | 100 | random perms each candidate starts with |
@@ -162,6 +163,39 @@ New options (off by default):
 - **4 candidates is close behind** (+3.5 [−0.1, +8.0]).
 - **The counter tweaks are all null:** idle 16, step-up 5, widen 20, back-accept 20, idle decrement 0. The current counter values sit on a flat optimum, consistent with the selection A/B.
 - Untested next steps: timer 128 combined with 4 candidates; other cycle lengths (64, 256); start widths 15 and 30.
+
+### Timer window follow-up (2026-10-08): **Null** (keep timer 128, start 20)
+A/B at 30 min × 8 paired seeds around the new defaults (timer, cycle 128, start 20, `es_mode=:ucb_then_mast`):
+
+| Arm | Final scores | Mean (median) | sd | Per seed vs base [95%] | Better / worse / tied |
+|---|---|---|---|---|---|
+| base | 167 177 159 158 156 161 160 158 | 162.0 (159.5) | 6.9 | — | — |
+| + 4 candidates | 160 159 158 159 159 158 157 169 | 159.9 (159.0) | 3.8 | −2.1 [−7.9, +3.1] | 3 / 5 / 0 |
+| cycle 64 | 159 161 161 157 163 167 160 152 | 160.0 (160.5) | 4.4 | −2.0 [−7.2, +2.8] | 3 / 4 / 1 |
+| cycle 256 | 158 159 157 156 166 161 158 161 | 159.5 (158.5) | 3.2 | −2.5 [−8.2, +2.5] | 2 / 5 / 1 |
+| start 15 | 158 160 159 159 160 159 159 158 | 159.0 (159.0) | 0.8 | −3.0 [−7.9, +0.8] | 2 / 4 / 2 |
+| start 30 | 160 158 156 159 153 160 161 117 | 153.0 (158.5) | 14.8 | **−9.0 [−19.5, −1.2]** | 2 / 6 / 0 |
+
+- **Nothing beat the defaults.** Every variant's point estimate is below the base, but only start 30 is clearly worse (it includes a run stuck at 117). Part of the base's mean comes from its 167 and 177 on the first two seeds.
+- **Combining 4 candidates with the timer doesn't add up** (−2.1); the two escape mechanisms aren't complementary.
+- **Start 15 is extremely consistent** (sd 0.8, 158–160 on every seed) but never broke out.
+- **New game:** a **177** from the base (seed 1702), pack `7EBET5ZlRiSWRsI5…`, close to the 178 `7EBET5ZlRiSHYc0…`; added to the header of `population.jl`.
+
+### Timer sweep shape, and sort order under the timer (2026-10-08): shape **Null**, visits-only **Adopted** (equivalent; default since 2026-10-08), uniform **Rejected**
+A/B at 30 min × 8 paired seeds around the defaults (timer 128, start 20, `es_mode=:ucb_then_mast`). New option `window_shape` (default 1): `back_accept = round(window_start × (1 − k/window_cycle)^window_shape)`. Shapes above 1 narrow fast and spend longer near the max; with shape 2 the window is 5 or narrower for half the cycle, with shape 3 for about two thirds.
+
+| Arm | Final scores | Mean (median) | sd | Per seed vs base [95%] | Better / worse / tied |
+|---|---|---|---|---|---|
+| shape 1 (base) | 177 162 161 156 157 160 158 162 | 161.6 (160.5) | 6.6 | — | — |
+| shape 2 | 162 160 160 156 152 161 157 157 | 158.1 (158.5) | 3.3 | **−3.5 [−7.1, −0.8]** | 1 / 6 / 1 |
+| shape 3 | 169 162 157 155 175 161 158 157 | 161.8 (159.5) | 6.9 | +0.1 [−4.0, +5.8] | 2 / 4 / 2 |
+| visits order only (`sort_rotation=:visits`) | 177 159 162 160 155 156 161 159 | 161.1 (159.5) | 6.8 | −0.5 [−2.4, +1.4] | 3 / 4 / 1 |
+| uniform pick (`selection_skew=1`) | 156 161 155 151 152 157 160 157 | 156.1 (156.5) | 3.5 | **−5.5 [−10.5, −1.9]** | 1 / 7 / 0 |
+
+- **Linear stays.** Shape 2 is worse. Shape 3 is level on average, with two breakthroughs (175, 169) but more runs below the base.
+- **The score-ordered sort phase is redundant under the timer:** visits-only is equivalent to the alternating rotation, within about ±2 points. The timer's narrowing does the focusing that phase used to do.
+- **Picks still need a skew:** uniform selection is clearly worse.
+- **New games:** two 177s (base and visits-only, both seed 1801) and a 175 (shape 3, seed 1805), all variants of the `CBMXT2Tom…` family; added to the header of `population.jl`.
 
 ### Taboo list for long-visited perms (2026-10-02): **Rejected** (not built)
 Question: past some visit count (picks since the perm last produced an accepted child), is a perm useless and safe to drop?
