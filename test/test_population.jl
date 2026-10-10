@@ -330,7 +330,7 @@ end
   for N in (13_000, 22_000)          # last maintenance mid-cycle
     Random.seed!(21)
     c = main(max_iterations=N, end_search_interval=3000, debug_interval=1000, verbose=false,
-      initial_perms_size=10, window_schedule=:timer, window_cycle=8, window_start=20)[1]
+      initial_perms_size=10, window_schedule=:timer, window_cycle=8, window_start=20, window_adapt=false)[1]
     k = (N ÷ 1000) % 8
     expected = k == 0 ? 20 : round(Int, 20 * (1 - k / 8))
     @test c.back_accept == expected

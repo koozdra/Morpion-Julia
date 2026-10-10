@@ -936,8 +936,8 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # pool, widen the next cycle's step back by window_adapt_step (up to
     # window_adapt_max), otherwise narrow it (down to window_adapt_min);
     # window_start is the starting value
-    window_adapt::Bool=false,
-    window_adapt_target::Int=1000,
+    window_adapt::Bool=true,
+    window_adapt_target::Int=50_000,
     window_adapt_step::Int=2,
     window_adapt_min::Int=1,
     window_adapt_max::Int=30)

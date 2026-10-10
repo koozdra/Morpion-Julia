@@ -52,7 +52,7 @@ Defaults as of 2026-10-08:
 | `default_back_accept` | 10 | was 3 in late September |
 | `selection_skew` | 10 | `rand()^10` over the sorted pool |
 | `sort_rotation` | `:visits` | the pool is re-sorted by fewest visits only (the score-ordered phase was redundant under the timer); was `:alternate` until 2026-10-08 |
-| `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 10 | the window narrows linearly from `window_start` below the max to the max over 128 maintenance intervals (12.8M iterations), then resets wide; timer since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)); `window_start` 20 → 10 on 2026-10-09 (10–25 is a plateau, below 10 traps runs). `window_adapt` (adaptive step back) is available but off |
+| `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 10 | the window narrows linearly from `window_start` below the max to the max over 128 maintenance intervals (12.8M iterations), then resets wide; timer since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)); `window_start` 20 → 10 on 2026-10-09 (10–25 is a plateau, below 10 traps runs). `window_adapt` (adaptive step back) on since 2026-10-10, target 50,000 configurations per cycle, ±2 within 1–30, starting from `window_start` |
 | `idle_reset` / `improvement_step_up` | 32 / 10 | only used with `window_schedule=:counters` (was 512 / 10000 on 2026-10-02, 128 / 100 on 2026-10-04) |
 | `initial_perms_size` | 100 | random perms each candidate starts with |
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
@@ -227,7 +227,7 @@ Together with the earlier follow-up (15: −3.0; 30: −9.0):
 - **10–25 is a plateau:** within about a point of each other. 20 keeps runs improving longest (median last gain 25.5 min) and produced the only breakout (174).
 - **New game:** **174** (step back 20, seed 2007), pack `FEBMv6lokkqKS4cwzBofV1…`, a variant of the `FEBMv6lokk…` family; added to the header of `population.jl`.
 
-### Adaptive step back (2026-10-09): **small positive, not significant**
+### Adaptive step back (2026-10-09): **Adopted** (default since 2026-10-10; A/B small positive, not significant)
 `window_adapt=true`: each candidate counts the new configurations added to its pool during a timer cycle. At each reset it widens the next cycle's step back by `window_adapt_step` (2) if that count was below `window_adapt_target`, otherwise narrows it by 2, within `window_adapt_min`–`window_adapt_max` (1–30), starting from `window_start`. `SearchStats.cycles` records every cycle's (iteration, count, step back used, next step back).
 
 - **Calibration matters.** A cycle typically adds thousands to hundreds of thousands of configurations (the pool stays at 1–2k because pruning keeps removing them). A first attempt with targets 10–10,000 drove every run's step back down into the trap zone (2–8), and was stopped after one round.
