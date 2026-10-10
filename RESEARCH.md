@@ -52,7 +52,7 @@ Defaults as of 2026-10-08:
 | `default_back_accept` | 10 | was 3 in late September |
 | `selection_skew` | 10 | `rand()^10` over the sorted pool |
 | `sort_rotation` | `:visits` | the pool is re-sorted by fewest visits only (the score-ordered phase was redundant under the timer); was `:alternate` until 2026-10-08 |
-| `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 20 | the window narrows linearly from 20 below the max to the max over 128 maintenance intervals (12.8M iterations), then resets wide; since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)) |
+| `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 10 | the window narrows linearly from `window_start` below the max to the max over 128 maintenance intervals (12.8M iterations), then resets wide; timer since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)); `window_start` 20 → 10 on 2026-10-09 (10–25 is a plateau, below 10 traps runs). `window_adapt` (adaptive step back) is available but off |
 | `idle_reset` / `improvement_step_up` | 32 / 10 | only used with `window_schedule=:counters` (was 512 / 10000 on 2026-10-02, 128 / 100 on 2026-10-04) |
 | `initial_perms_size` | 100 | random perms each candidate starts with |
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
@@ -209,6 +209,41 @@ A/B at 30 min × 8 paired seeds around the defaults (timer 128, start 20, `es_mo
 - **Same conclusion as `window_shape`:** spending more of the cycle near the max doesn't help on average. Dwell 0.5 is slightly worse, and dwell 1's mean is lifted by one run while it's worse on 5 of 8 seeds.
 - **Even pacing keeps runs improving later:** median last gain at minute 25.7 for dwell 0, vs 23.2 and 16.3.
 - **New game:** **176** (dwell 1, seed 1906), pack `FEBMv6lokkiL84GQw5…`, a variant of the `FEBMv6lokk…` 177 family; added to the header of `population.jl`.
+
+### Timer step back (`window_start`) from 1 to 25 (2026-10-09): **keep 20**
+A/B at 30 min × 8 paired seeds, current defaults (timer 128, linear, visits-only sort, `es_mode=:ucb_then_mast`):
+
+| Step back | Final scores | Mean (median) | sd | Per seed vs 20 [95%] | Better / worse / tied | Median last gain |
+|---|---|---|---|---|---|---|
+| 1 | 148 132 152 154 136 111 154 133 | 140.0 (142.0) | 15.0 | **−19.2 [−29.2, −10.6]** | 0 / 8 / 0 | min 1.5 |
+| 3 | 159 135 158 157 148 158 148 159 | 152.8 (157.5) | 8.5 | **−6.5 [−14.0, −0.2]** | 2 / 4 / 2 | min 6.7 |
+| 5 | 147 158 156 121 156 160 148 159 | 150.6 (156.0) | 12.9 | **−8.6 [−18.5, −0.2]** | 2 / 4 / 2 | min 5.0 |
+| 10 | 156 159 156 159 158 159 162 160 | 158.6 (159.0) | 2.0 | −0.6 [−4.2, +2.0] | 4 / 3 / 1 | min 8.6 |
+| **20 (default)** | 157 155 158 156 156 159 174 159 | 159.2 (157.5) | 6.1 | — | — | min 25.5 |
+| 25 | 156 155 157 161 160 159 158 157 | 157.9 (157.5) | 2.0 | −1.4 [−6.0, +2.0] | 2 / 4 / 2 | min 13.8 |
+
+Together with the earlier follow-up (15: −3.0; 30: −9.0):
+- **Small step backs trap runs.** With 1, runs stop improving within minutes (median last gain at 1.5 min) and some end far down (111, 132, 133). 3 and 5 usually do fine but sometimes trap badly (121, 135).
+- **10–25 is a plateau:** within about a point of each other. 20 keeps runs improving longest (median last gain 25.5 min) and produced the only breakout (174).
+- **New game:** **174** (step back 20, seed 2007), pack `FEBMv6lokkqKS4cwzBofV1…`, a variant of the `FEBMv6lokk…` family; added to the header of `population.jl`.
+
+### Adaptive step back (2026-10-09): **small positive, not significant**
+`window_adapt=true`: each candidate counts the new configurations added to its pool during a timer cycle. At each reset it widens the next cycle's step back by `window_adapt_step` (2) if that count was below `window_adapt_target`, otherwise narrows it by 2, within `window_adapt_min`–`window_adapt_max` (1–30), starting from `window_start`. `SearchStats.cycles` records every cycle's (iteration, count, step back used, next step back).
+
+- **Calibration matters.** A cycle typically adds thousands to hundreds of thousands of configurations (the pool stays at 1–2k because pruning keeps removing them). A first attempt with targets 10–10,000 drove every run's step back down into the trap zone (2–8), and was stopped after one round.
+- **Recalibrated A/B** at 30 min × 8 paired seeds, step back starting at 20 in every arm:
+
+| Arm | Final scores | Mean (median) | Per seed vs fixed 20 [95%] | Better / worse / tied | Step back: final per run (mean over run) |
+|---|---|---|---|---|---|
+| fixed 20 | 155 159 160 152 157 162 157 155 | 157.1 (157.0) | — | — | 20 |
+| target 20k | 159 159 159 152 157 163 157 162 | 158.5 (159.0) | +1.4 [−0.1, +3.2] | 3 / 1 / 4 | 6–14 (13.3) |
+| target 50k | 159 163 158 152 157 163 157 159 | 158.5 (158.5) | +1.4 [−0.1, +2.9] | 4 / 1 / 3 | 8–20 (14.8) |
+| target 150k | 155 163 158 152 157 163 157 155 | 157.5 (157.0) | +0.4 [−0.6, +1.6] | 2 / 1 / 5 | 10–28 (18.7) |
+| target 400k | 156 162 159 155 157 163 157 155 | 158.0 (157.0) | +0.9 [+0.0, +1.9] | 4 / 1 / 3 | 28–30 (24.4) |
+
+- **Every adaptive arm is slightly ahead of fixed 20** (+0.4 to +1.4) and worse on only 1 seed of 8. But the intervals touch zero, and many runs tie exactly: all arms use 20 for the first cycle, so runs often reach the same plateau first.
+- **Targets of 20k–50k did best.** They settle the step back around 8–20 (mean about 14), which agrees with the fixed-step-back plateau of 10–25.
+- **No run reached 165** in any arm of this A/B, so it says nothing about breakthroughs.
 
 ### Taboo list for long-visited perms (2026-10-02): **Rejected** (not built)
 Question: past some visit count (picks since the perm last produced an accepted child), is a perm useless and safe to drop?

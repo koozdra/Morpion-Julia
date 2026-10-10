@@ -364,3 +364,20 @@ end
     initial_perms_size=10, window_cycle=16, window_start=20, window_dwell=1)[1]
   @test c.back_accept == round(Int, 20 * (1 - floor(Int, 16 * sqrt(13 / 16)) / 16))
 end
+
+@testset "adaptive step back widens after a lean cycle and narrows after a rich one" begin
+  for target in (5, 50_000)
+    s = SearchStats(rows=false)
+    Random.seed!(25)
+    c = main(max_iterations=40_000, end_search_interval=3000, debug_interval=1000, verbose=false,
+      initial_perms_size=10, window_cycle=4, window_start=6, stats=s,
+      window_adapt=true, window_adapt_target=target, window_adapt_step=2, window_adapt_min=1, window_adapt_max=12)[1]
+    @test !isempty(s.cycles)
+    for (it, yield, old, new) in s.cycles
+      expected = yield < target ? min(12, old + 2) : max(1, old - 2)
+      @test new == expected
+    end
+    @test all(cy -> 1 <= cy[4] <= 12, s.cycles)
+    @test c.window_start == s.cycles[end][4]
+  end
+end

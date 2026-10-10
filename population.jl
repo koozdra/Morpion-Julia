@@ -7,6 +7,7 @@
 # 172 AENMhclbKcGxHhKhtGnBJdfX1DeJf7L6X+vt09fU7/Ptcv//va
 # 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
 # 172 UkiDTozaJmq4Mi4JQpJhYu3LPXzf7Tbzf1eV7+rOrb99//udfg
+# 174 FEBMv6lokkqKS4cwzBofV1R1Xre+/uWv99l+da9v/vbL9d7f4
 # 175 CBMXT2TomgmTmJOEtJJqs/Uda9vn8Lz+M81ndct93r/3p9/9+0
 # 175 KyQihtyDUKLaq0EcpmqsRa/XuYvfN79c9T0t356/9+23fb5y/U
 # 176 FEBMv6lokkiL84GQw5LldzoifP3390p//WMfmu+6/f909//erg
@@ -620,10 +621,15 @@ mutable struct Candidate
     # perms dropped by pruning, kept (up to main's archive_size, best scores
     # first) so a later widening of the window can put them back
     archive::Vector{Perm}
+    # timer window: this candidate's current step back (window width at a
+    # reset; adapted per cycle with window_adapt) and the new configurations
+    # added to its pool during the current cycle
+    window_start::Int
+    cycle_yield::Int
 end
 
 Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter) =
-    Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter, Perm[])
+    Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter, Perm[], 20, 0)
 
 # Tighten back_accept by one and drop every perm (and its index entry) that
 # falls below the new acceptance window.
@@ -747,6 +753,9 @@ mutable struct SearchStats
     # idle resets (window widenings) and archived perms put back at them
     idle_resets::Int
     reintroduced::Int
+    # timer cycles: (iteration, configurations added during the cycle, step
+    # back used, step back for the next cycle)
+    cycles::Vector{NTuple{4,Int}}
     # maintenance snapshots: (iteration, seconds, candidate, max_score, back_accept, pool size, perms at max, distinct scores)
     snapshots::Vector{NTuple{8,Float64}}
     # parent game -> step at which each dna index first became legal (0 = never)
@@ -762,7 +771,7 @@ end
 
 SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
     Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
-    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
     reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
@@ -914,14 +923,24 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # cycle going)
     window_schedule::Symbol=:timer,
     window_cycle::Int=128,
-    window_start::Int=20,
+    window_start::Int=10,
     # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
     # 1 narrows linearly, > 1 narrows fast and spends longer near the max
     window_shape::Real=1,
     # how the timer's steps are paced: 0 = every step lasts one maintenance
     # interval; d > 0 = step k lasts in proportion to k^d (the cycle still takes
     # window_cycle intervals), so more time is spent near the max
-    window_dwell::Real=0)
+    window_dwell::Real=0,
+    # adaptive step back for the timer window: at each reset, if the cycle that
+    # just ended added fewer than window_adapt_target new configurations to the
+    # pool, widen the next cycle's step back by window_adapt_step (up to
+    # window_adapt_max), otherwise narrow it (down to window_adapt_min);
+    # window_start is the starting value
+    window_adapt::Bool=false,
+    window_adapt_target::Int=1000,
+    window_adapt_step::Int=2,
+    window_adapt_min::Int=1,
+    window_adapt_max::Int=30)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
@@ -985,6 +1004,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 0
             )
         )
+    end
+
+    for c in candidates
+        c.window_start = window_start
     end
 
     # reusable rollout buffers for eval_dna_and_hash! (eval_moves aliases
@@ -1085,6 +1108,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             # the next score-order sort
             new_best_first ? pushfirst!(candidates[candidate_position].perms, new_perm) :
             push!(candidates[candidate_position].perms, new_perm)
+            candidates[candidate_position].cycle_yield += 1
             candidates[candidate_position].max_score = eval_score
             candidates[candidate_position].max_moves = pack_mode ? copy(eval_moves) : new_perm.moves
             candidates[candidate_position].index[eval_moves_hash] = new_perm
@@ -1107,6 +1131,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                 candidate.index[eval_moves_hash] = new_perm
                 push!(candidate.perms, new_perm)
+                candidate.cycle_yield += 1
                 stats === nothing || (stats_outcome = OUTCOME_ACCEPT)
 
                 arrow_symbol =
@@ -1221,6 +1246,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                         new_best_first ? pushfirst!(end_search_candidate.perms, new_perm) :
                         push!(end_search_candidate.perms, new_perm)
+                        end_search_candidate.cycle_yield += 1
                         end_search_candidate.index[es_moves_hash] = new_perm
                         end_search_candidate.max_moves = es_moves
                         end_search_candidate.max_score = es_score
@@ -1240,6 +1266,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         )
                         push!(end_search_candidate.perms, new_perm)
                         end_search_candidate.index[es_moves_hash] = new_perm
+                        end_search_candidate.cycle_yield += 1
                         es_accepted += 1
 
                         end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - idle_decrement)
@@ -1278,13 +1305,23 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     # over window_cycle maintenance intervals, then resets wide
                     k = timer_step(iteration, debug_interval, window_cycle, window_dwell)
                     if k == 0
-                        c.back_accept = window_start
+                        if window_adapt && iteration > 0
+                            old_start = c.window_start
+                            c.window_start = c.cycle_yield < window_adapt_target ?
+                                             min(window_adapt_max, old_start + window_adapt_step) :
+                                             max(window_adapt_min, old_start - window_adapt_step)
+                            stats === nothing || push!(stats.cycles, (iteration, c.cycle_yield, old_start, c.window_start))
+                            verbose && println("$iteration. cycle added $(c.cycle_yield) new configurations ",
+                                "(target $window_adapt_target): step back $old_start -> $(c.window_start)")
+                        end
+                        c.cycle_yield = 0
+                        c.back_accept = c.window_start
                         stats === nothing || (stats.idle_resets += 1)
                         archive_size > 0 && reintroduce_and_log!(c, iteration, verbose, stats)
                     else
                         c.back_accept = window_shape == 1 ?
-                                        round(Int, window_start * (1 - k / window_cycle)) :
-                                        round(Int, window_start * (1 - k / window_cycle)^window_shape)
+                                        round(Int, c.window_start * (1 - k / window_cycle)) :
+                                        round(Int, c.window_start * (1 - k / window_cycle)^window_shape)
                         prune_below!(c; archive_size=archive_size)
                     end
                 elseif c.improvement_counter >= improvement_step_up
