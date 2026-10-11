@@ -381,3 +381,17 @@ end
     @test c.window_start == s.cycles[end][4]
   end
 end
+
+@testset "children get min_modifications to num_modifications swaps" begin
+  for (lo, hi) in ((1, 1), (3, 3), (1, 4), (2, 10))
+    s = SearchStats(reject_sample=1)
+    Random.seed!(26)
+    main(max_iterations=3000, verbose=false, initial_perms_size=10, stats=s,
+      min_modifications=lo, num_modifications=hi)
+    @test !isempty(s.num_swaps)
+    @test all(k -> lo <= k <= hi, s.num_swaps)
+    @test lo == hi || length(unique(s.num_swaps)) == hi - lo + 1
+  end
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, min_modifications=0)
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, min_modifications=5, num_modifications=4)
+end

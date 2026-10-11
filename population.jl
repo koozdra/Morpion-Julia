@@ -205,10 +205,12 @@ end
 # moves in a row find nothing new (or index_cap results are collected).
 # Returns the same kind of index as end_search (lines = true keys it by lines).
 # mast = true draws completions with move-average sampling (see MASTStats)
-# instead of uniformly.
+# instead of uniformly. Once a completion has beaten the source, the stall
+# limit is multiplied by stall_boost, so productive calls get to keep going.
 function end_search_ucb(moves::Array{Move,1}, back_accept;
     step_back_fraction::Real=0.25, stall_rollouts::Int=2000, index_cap::Int=1000,
-    exploration::Real=0.1, warmup::Int=2, lines::Bool=false, mast::Bool=false)
+    exploration::Real=0.1, warmup::Int=2, lines::Bool=false, mast::Bool=false,
+    stall_boost::Real=1)
     score = length(moves)
     depth = floor(Int, score * step_back_fraction)
     index = Dict{UInt64,Array{Move,1}}()
@@ -245,6 +247,7 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
     eval_possible_moves = Move[]
     eval_suffix = Move[]
     stats = mast ? MASTStats() : nothing
+    stall = Float64(stall_rollouts)   # becomes stall_rollouts * stall_boost once the source is beaten
 
     k = 0
     while true
@@ -252,7 +255,7 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
             k = total_pulls % depth + 1
         else
             (length(index) < index_cap &&
-                moves_since_new < stall_rollouts * total_moves / total_pulls) || break
+                moves_since_new < stall * total_moves / total_pulls) || break
             bonus = exploration * sqrt(log(total_pulls))
             best_value = -Inf
             for a in 1:depth
@@ -272,6 +275,7 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
         played = length(eval_suffix)
         found = score - k + played > score - back_accept && !haskey(index, h)
         found && (index[h] = vcat(moves[1:(score-k)], eval_suffix))
+        played > k && (stall = stall_rollouts * stall_boost)   # beat the source
 
         rewards[k] += found
         pulls[k] += 1
@@ -841,7 +845,7 @@ end
 function main(; max_iterations::Union{Nothing,Int}=nothing,
     max_seconds::Union{Nothing,Real}=nothing,
     stats::Union{Nothing,SearchStats}=nothing,
-    end_search_interval::Int=10000,
+    end_search_interval::Int=5000,
     # maintenance (perm re-sorting, pruning, idle bookkeeping) runs every
     # debug_interval iterations; the progress line prints every print_interval
     # iterations (keep it a multiple of debug_interval)
@@ -850,7 +854,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     verbose::Bool=true,
     # hyper-parameters (defaults are the hand-tuned values; see tune.jl for the
     # search harness that explores them)
+    # each child gets k swaps, k uniform in min_modifications:num_modifications
     num_modifications::Int=10,
+    min_modifications::Int=2,
     default_back_accept::Int=10,
     selection_skew::Real=10,
     move_selection_skew::Real=1,
@@ -941,10 +947,14 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     window_adapt_target::Int=50_000,
     window_adapt_step::Int=2,
     window_adapt_min::Int=1,
-    window_adapt_max::Int=30)
+    window_adapt_max::Int=30,
+    # end_search: once a call has found a completion beating its source, its
+    # stall limit is multiplied by this (1 = no boost)
+    es_stall_boost::Real=1)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
+    1 <= min_modifications <= num_modifications || throw(ArgumentError("need 1 <= min_modifications <= num_modifications, got $min_modifications:$num_modifications"))
     config_key in (:points, :lines) || throw(ArgumentError("config_key must be :points or :lines, got $config_key"))
     window_schedule in (:counters, :timer) || throw(ArgumentError("window_schedule must be :counters or :timer, got $window_schedule"))
     sort_rotation in (:alternate, :score, :visits) || throw(ArgumentError("sort_rotation must be :alternate, :score or :visits, got $sort_rotation"))
@@ -1072,7 +1082,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         end
 
         empty!(modifications)
-        for _ in 1:rand(2:num_modifications)
+        for _ in 1:rand(min_modifications:num_modifications)
             push!(modifications, (dna_index(selectByR(pmoves, rand()^move_selection_skew)), rand(1:perm_length)))
         end
 
@@ -1215,9 +1225,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         warm=es_nrpa_warm, budget_s=es_nrpa_budget, lines=lines_key)
                 elseif es_mode === :ucb_then_mast
                     merge!(end_search_ucb(es_source, 5; step_back_fraction=es_step_back_fraction,
-                            stall_rollouts=es_ucb_stall_rollouts, lines=lines_key),
+                            stall_rollouts=es_ucb_stall_rollouts, lines=lines_key, stall_boost=es_stall_boost),
                         end_search_ucb(es_source, 5; step_back_fraction=es_step_back_fraction,
-                            stall_rollouts=es_mast_stall_rollouts, lines=lines_key, mast=true))
+                            stall_rollouts=es_mast_stall_rollouts, lines=lines_key, mast=true, stall_boost=es_stall_boost))
                 elseif es_mode === :mast_then_nrpa
                     merge!(end_search_ucb(es_source, 5; step_back_fraction=es_step_back_fraction,
                             stall_rollouts=es_mast_stall_rollouts, lines=lines_key, mast=true),

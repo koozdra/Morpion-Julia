@@ -32,6 +32,7 @@ If an entry stops being true (the code or defaults changed), mark it rather than
 - **Use paired seeds and report a confidence interval** on the per-seed difference. Final scores vary by about ±15 points across seeds, and a single run can get stuck around 115, so effects under about ±5 points need 40+ paired seeds.
 - **Re-test winners on fresh seeds.** A tuning winner at +11.4 collapsed to −1.9 on new seeds (winner's curse).
 - **Per-attempt accept rate doesn't predict final score.** Several changes raised accepts or breakthroughs per call and did nothing end to end. Judge changes on final score.
+- **Keep the Mac awake.** Wrap long batches in `caffeinate -i -s`. On 2026-10-11 the machine went to sleep mid-batch. The starved runs scored 108–150 and looked like a real effect until the power log (`pmset -g log`) showed the sleep.
 - **Defaults drift.** Many entries below were measured under older defaults. Check the date against the defaults history in [Current state](#current-state).
 
 **Tools in the repo:**
@@ -44,17 +45,18 @@ If an entry stops being true (the code or defaults changed), mark it rather than
 
 ## Current state
 
-Defaults as of 2026-10-08:
+Defaults as of 2026-10-11:
 
 | Setting | Value | Note |
 |---|---|---|
-| `num_modifications` | 10 | 2–10 swaps per mutation |
+| `num_modifications`, `min_modifications` | 10, 2 | 2–10 swaps per mutation, uniform |
 | `default_back_accept` | 10 | was 3 in late September |
 | `selection_skew` | 10 | `rand()^10` over the sorted pool |
 | `sort_rotation` | `:visits` | the pool is re-sorted by fewest visits only (the score-ordered phase was redundant under the timer); was `:alternate` until 2026-10-08 |
 | `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 10 | the window narrows linearly from `window_start` below the max to the max over 128 maintenance intervals (12.8M iterations), then resets wide; timer since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)); `window_start` 20 → 10 on 2026-10-09 (10–25 is a plateau, below 10 traps runs). `window_adapt` (adaptive step back) on since 2026-10-10, target 50,000 configurations per cycle, ±2 within 1–30, starting from `window_start` |
 | `idle_reset` / `improvement_step_up` | 32 / 10 | only used with `window_schedule=:counters` (was 512 / 10000 on 2026-10-02, 128 / 100 on 2026-10-04) |
 | `initial_perms_size` | 100 | random perms each candidate starts with |
+| `end_search_interval` | 5,000 | iterations between end_search calls, about 20% of time in end_search (was 10,000 until 2026-10-11) |
 | `es_step_back_fraction` | 0.4 | end_search unwinds up to 40% of the source game (was 0.25 until 2026-10-11) |
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
 | `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
@@ -271,6 +273,26 @@ Caveat: the baseline tested was `tune.jl`'s (`selection_skew=2`, `default_back_a
 ### Mutation size (2026-09-24): **Null**
 Late-run accept rate falls steadily with swap count k (k=2: 7.6 per 1k; k=10: 1.26 per 1k), and k=2 gives about 5× the new bests. Narrowing the range still doesn't change final scores: 2–4 vs 2–10 gave −0.3 [−4.4, +3.8] at 180 s × 26 seeds, and 2–3, 1–3 and 2–6 were also null at 3M iterations.
 
+### Which swaps matter (2026-10-11): measured offline; fixed-k A/B **Open**
+A mutation applies k swaps (k uniform in `min_modifications:num_modifications`, 2–10). Each swap gives one move of the parent's game (picked uniformly) the dna value of a random line, and vice versa. Offline, on 150 high-scoring parents (25 captured end_search sources from each of 6 runs), 2,000 mutations per parent per k drawn exactly as `main` does, 3M evaluations in all. For every child that beat its parent, every subset of its swaps (in order) was evaluated to find the smallest that reaches the same score.
+
+| k | Changed | Beats parent | New, in window (≥ parent − 10) | Beats max | Gain ≥ 3 | First swapped position | Smallest subset that suffices: 1 / 2 / 3+ swaps |
+|---|---|---|---|---|---|---|---|
+| 1 | 53% | 0.91% | 9.7% | 0.072% | 0.027% | 72 | 100% / 0 / 0 |
+| 2 | 77% | 0.92% | 10.1% | 0.092% | 0.031% | 48 | 97.6% / 2.4% / 0 |
+| 3 | 88% | 0.70% | 8.1% | 0.094% | 0.039% | 36 | 94.9% / 5.0% / 0 |
+| 4 | 94% | 0.51% | 6.1% | 0.093% | 0.034% | 29 | 92.4% / 7.2% / 0.3% |
+| 5 | 97% | 0.38% | 4.5% | 0.094% | 0.030% | 25 | 89.2% / 10.0% / 0.9% |
+| 7 | 99% | 0.16% | 2.4% | 0.062% | 0.019% | 18 | 82.6% / 13.0% / 4.3% |
+| 10 | 99.8% | 0.06% | 1.1% | 0.029% | 0.010% | 14 | 79.1% / 15.3% / 5.7% |
+| 2–10 (current) | | 0.35% | 4.3% | 0.068% | | | |
+
+- **An improvement almost always needs one swap.** Even at k=10, 79% of improving children were reproduced by a single one of their swaps; the rest were passengers.
+- **Extra swaps mostly do damage:** the share of children worse than the parent rises from 51% (k=1) to 99.6% (k=10), so improvements per evaluation fall about 15× from k=2 to k=10.
+- **Larger k makes bigger jumps when it works** (16% of k=10 improvements gain 3+, against 3% at k=1), but succeeds so rarely that big jumps are most frequent at k=3. Beating the run's max is flat across k=2–5.
+- **Small k is also cheaper in the real search:** the first swapped move is later in the game, so a checkpointed evaluation replays less.
+- Fixed k=2 gives 2.6× the improvements and 2.3× the new in-window children per evaluation of the current 2–10. The 2026-09-24 entry above found that narrower ranges didn't change final scores under older defaults, so this needs an end-to-end test: fixed 1, 2, 3 and 1–4 against 2–10 under the current defaults (pending).
+
 ## end_search
 
 ### Hyperparameter search with `tune_end_search.jl` (September 2026): **Null**
@@ -324,6 +346,53 @@ From the 8 × 30-minute runs (2026-10-02 defaults). The earlier entries in this 
 Per seed against the default: 5,000 gave −6.4 [−17.8, +0.9] (median −0.5, with one stuck run at 118), and 2,500 gave −1.5 [−4.1, +0.9] (median −1.0).
 
 Calling it 4× as often got further early (158.1 vs 154.4 at 5 min) but then nearly stopped improving: +1.5 from minute 5 to 30, against +6.7 for the default. Its pool was also smaller (34k vs 52k perms). The default interval is fine for 30-minute runs; a 2,500 interval might suit runs of a few minutes.
+
+*Superseded on 2026-10-11:* under the timer window and adaptive step back, 5,000 won (next entry).
+
+### end_search frequency under the current defaults (2026-10-11): 5,000 **Adopted** (default since 2026-10-11)
+`end_search_interval` with the timer window, adaptive step back, `es_mode=:ucb_then_mast` and 40% depth, 30 min × 8 paired seeds (2301–2308):
+
+| Interval | Final scores | Mean | Per seed vs 10,000 [95%] | Better / tied / worse | Calls per run | Time in end_search |
+|---|---|---|---|---|---|---|
+| 1,250 | 159 159 156 156 158 159 157 156 | 157.5 | −0.5 [−2.2, +1.4] | 3 / 1 / 4 | 31.9k | 57% |
+| 2,500 | 162 158 160 157 158 161 162 152 | 158.8 | +0.8 [−2.4, +3.9] | 4 / 0 / 4 | 22.4k | 43% |
+| **5,000** | 161 163 159 166 159 159 159 157 | **160.4** | **+2.4 [+0.5, +4.2]** | **5 / 2 / 1** | 15.3k | 20% |
+| 10,000 (old default) | 158 159 159 160 159 157 153 159 | 158.0 | — | — | 9.2k | 13% |
+| 20,000 | 169 159 159 159 162 148 161 161 | 159.8 | +1.8 [−2.1, +5.6] | 4 / 2 / 2 | 4.8k | 8% |
+| 40,000 | 161 154 154 160 160 159 161 159 | 158.5 | +0.5 [−2.2, +3.4] | 4 / 2 / 2 | 2.9k | 3% |
+
+- **5,000 is the only significant result:** its interval excludes zero, and it lost one seed.
+- **Calls don't scale with frequency:** 1,250 calls 8× as often as 10,000 but makes only 3.5× the calls, because end_search takes over half the run and starves the main loop.
+- **The curve is flat-topped:** everything from 2,500 to 40,000 is within noise of the old default, so the setting matters less than the 5,000 result suggests. This reverses the 2026-10-02 result, which was measured under the old counter-driven window (and had one run stuck at 118).
+- Seeds 2307–2308 were rerun after the machine slept through their first attempt (see [How to run experiments](#how-to-run-experiments)).
+
+### Stall rules (2026-10-11): measured offline, **Open** end to end
+UCB end_search stops a pass once it has played `stall_rollouts` × (mean rollout length) moves without a new result, or at 1,000 results. The UCB pass uses `es_ucb_stall_rollouts=2000` and the MAST pass `es_mast_stall_rollouts=500`. `es_stall_boost` (new, default 1) multiplies a call's stall limit once it has found a completion beating its source.
+
+Per call, offline on 300 captured calls at 40% depth (same RNG seed per call in every arm):
+
+| Setting | ms per call | p90 ms | Variants | Beats source | Beats max | Variants per ms |
+|---|---|---|---|---|---|---|
+| default (UCB 2000, MAST 500) | 14.5 | 32 | 58.7 | 52% | 2.0% | 4.1 |
+| UCB 500 | 6.7 | 16 | 52.5 | 52% | 2.0% | 7.9 |
+| UCB 1000 | 9.2 | 22 | 57.2 | 52% | 2.3% | 6.2 |
+| UCB 4000 | 24.5 | 50 | 65.3 | 54% | 2.0% | 2.7 |
+| UCB 8000 | 49.7 | 121 | 71.1 | 56% | 2.3% | 1.4 |
+| no MAST pass | 9.9 | 21 | 44.0 | 46% | 2.0% | 4.4 |
+| MAST 100 | 10.7 | 24 | 51.0 | 49% | 2.0% | 4.7 |
+| MAST 250 | 12.0 | 27 | 55.2 | 51% | 2.0% | 4.6 |
+| MAST 1000 | 18.9 | 45 | 62.5 | 54% | 2.0% | 3.3 |
+| MAST 2000 | 26.7 | 59 | 65.4 | 56% | 2.7% | 2.5 |
+| boost ×2 | 24.1 | 52 | 65.7 | 52% | 2.0% | 2.7 |
+| boost ×4 | 47.1 | 122 | 72.5 | 52% | 2.0% | 1.5 |
+| boost ×8 | 84.4 | 197 | 78.0 | 52% | 2.3% | 0.9 |
+
+- **Longer stalls buy variants at a steep price:** UCB 8000 costs 3.4× the time for 21% more variants. Cutting the UCB stall to 500 halves the cost and keeps 90% of the variants.
+- **Breakthroughs barely move:** beats max stays at 2.0–2.7% (6–8 of 300 calls) in every arm.
+- **The boost is the worst trade:** more than half of all calls beat their source, so it multiplies the cost of most calls.
+- **The MAST pass earns its keep:** dropping it loses 25% of the variants and 6 points of beats source for a third of the time.
+
+End to end (UCB 500, UCB 8000, MAST 2000, boost ×4 against the default): pending.
 
 ### Comprehensiveness under the current defaults (2026-10-02): measured
 298 end_search calls sampled from 6 × 10-minute runs (2026-10-02 defaults, `improvement_step_up=1000`), each scored against exhaustive ground truth over the 25% wind-back window, 2 seeds per call per variant.
