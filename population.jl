@@ -6,6 +6,7 @@
 # 171 F0wgDolGsg5l0kkIno6jbiovx31/l5b3v42y8je9dvt2d//vvQ
 # 172 AENMhclbKcGxHhKhtGnBJdfX1DeJf7L6X+vt09fU7/Ptcv//va
 # 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
+# 172 LoyBD5plSCpgxshpTUZV7x4z176/8O/mfz+XX57zt/3z/+r4
 # 172 UkiDTozaJmq4Mi4JQpJhYu3LPXzf7Tbzf1eV7+rOrb99//udfg
 # 174 FEBMv6lokkqKS4cwzBofV1R1Xre+/uWv99l+da9v/vbL9d7f4
 # 175 CBMXT2TomgmTmJOEtJJqs/Uda9vn8Lz+M81ndct93r/3p9/9+0
@@ -859,7 +860,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     initial_candidates_size::Int=1,
     # end_search wind-back depth (fraction of the source's score) and how many
     # fruitless completions in a row end each wind-back step
-    es_step_back_fraction::Real=0.25,
+    es_step_back_fraction::Real=0.4,
     es_stall_cut_off::Int=200,
     # :ucb (end_search_ucb, which stops after es_ucb_stall_rollouts), :nrpa
     # (end_search_nrpa, a tree search; see the es_nrpa_* settings), two

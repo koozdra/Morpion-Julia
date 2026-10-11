@@ -55,6 +55,7 @@ Defaults as of 2026-10-08:
 | `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 10 | the window narrows linearly from `window_start` below the max to the max over 128 maintenance intervals (12.8M iterations), then resets wide; timer since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)); `window_start` 20 → 10 on 2026-10-09 (10–25 is a plateau, below 10 traps runs). `window_adapt` (adaptive step back) on since 2026-10-10, target 50,000 configurations per cycle, ±2 within 1–30, starting from `window_start` |
 | `idle_reset` / `improvement_step_up` | 32 / 10 | only used with `window_schedule=:counters` (was 512 / 10000 on 2026-10-02, 128 / 100 on 2026-10-04) |
 | `initial_perms_size` | 100 | random perms each candidate starts with |
+| `es_step_back_fraction` | 0.4 | end_search unwinds up to 40% of the source game (was 0.25 until 2026-10-11) |
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
 | `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
 | `archive_size` | 100,000 | pruned perms are archived and put back when the window widens again: at each timer reset (or idle reset under `:counters`); since 2026-10-06 |
@@ -409,6 +410,33 @@ Per seed vs UCB: UCB then MAST −1.6 [−5.3, +1.7] (median 0; better 5, worse 
 - **UCB then MAST was remarkably consistent** (156–161 on every seed, never stuck), but it never broke out either: no run above 161. It's ahead early (155.8 vs 152.5 at 5 min) and behind by 30 min.
 - **UCB alone produced the two best runs: 172 and 176.** The 176 (seed 1510) wasn't saved, because the A/B runner only recorded scores. Runners should save `max_moves` from now on.
 - Recommendation was to keep `es_mode=:ucb`. Switched the default to `:ucb_then_mast` on 2026-10-08 anyway, for its consistency: no stuck runs, sd 1.6.
+
+### end_search depth under the current defaults (2026-10-11): 40% **Adopted** (default since 2026-10-11; best, not significant)
+`es_step_back_fraction` (how much of the source game end_search unwinds) with `es_mode=:ucb_then_mast`, timer window, adaptive step back.
+
+Per call, offline on 300 captured calls:
+
+| Depth | ms per call | Variants found | Beats source | Beats max | Mean gain |
+|---|---|---|---|---|---|
+| 10% | 1.8 | 12.1 | 34.0% | 0.67% | 0.48 |
+| 25% (default) | 8.3 | 41.1 | 49.3% | 1.33% | 0.79 |
+| 40% | 14.6 | 58.7 | 52.3% | 2.00% | 0.89 |
+| 60% | 18.3 | 90.9 | 54.3% | 3.00% | 0.97 |
+| 80% | 19.5 | 87.2 | 52.7% | 2.33% | 0.95 |
+
+End to end, 30 min × 8 paired seeds:
+
+| Depth | Final scores | Mean (median) | sd | Per seed vs 25% [95%] | Better / worse / tied | Mean best at 5 / 10 / 20 / 30 min | Iterations/s | Time in end_search |
+|---|---|---|---|---|---|---|---|---|
+| 10% | 163 158 159 158 158 159 162 155 | 159.0 (158.5) | 2.5 | +0.2 [−4.0, +4.1] | 4 / 3 / 1 | 156.2 / 157.0 / 158.4 / 159.0 | 80k | 3.6% |
+| 25% (default) | 157 158 169 157 159 154 154 162 | 158.8 (157.5) | 4.9 | — | — | 156.8 / 158.2 / 158.5 / 158.8 | 77k | 12.1% |
+| **40%** | 159 172 156 161 162 161 162 162 | **161.9** (**161.5**) | 4.6 | **+3.1 [−2.4, +7.8]** | **6 / 1 / 1** | 154.8 / 158.5 / 160.1 / 161.9 | 78k | 10.5% |
+| 60% | 161 160 159 159 159 161 156 159 | 159.2 (159.0) | 1.6 | +0.5 [−3.1, +3.5] | 5 / 2 / 1 | 153.8 / 156.0 / 157.4 / 159.2 | 73k | 13.7% |
+
+- **40% is the best depth:** better than 25% on 6 of 8 seeds, the highest mean and median, and a new 172. It starts slower (154.8 vs 156.8 at 5 min), overtakes by 10 min, and keeps climbing to the end. That's still within noise (the interval spans zero).
+- **Deeper isn't automatically better:** 60% finds the most per call but loses about 5% throughput and climbs slowest early. 80% adds nothing over 60% per call.
+- **Measured cost in real runs is smaller than per call suggests:** time in end_search varied from run to run (7–12% at 25%), and 40% cost about the same as 25%.
+- **New game:** **172** (40%, seed 2202), pack `LoyBD5plSCpgx…`, a variant of the `LoyBD5plSCp…` 176 family; added to the header of `population.jl`.
 
 ## Neighbourhood structure
 
