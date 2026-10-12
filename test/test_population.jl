@@ -415,3 +415,24 @@ end
   end
   @test_throws ArgumentError main(max_iterations=10, verbose=false, es_when_all_searched=:again)
 end
+
+@testset "archive_rejects keeps below-window children for the next reset" begin
+  s = SearchStats(rows=false)
+  Random.seed!(28)
+  cs = main(max_iterations=60_000, verbose=false, initial_perms_size=10, stats=s, debug_interval=1000,
+    window_cycle=8, window_start=10, window_adapt=false, archive_size=50_000, archive_rejects=true)
+  @test s.archived_rejects > 0
+  @test s.reintroduced > 0
+  for c in cs
+    hashes = [p.moves_hash for p in c.archive]
+    @test allunique(hashes)                        # no duplicates in the archive
+    @test Set(hashes) == c.archived                # the dedup set matches the archive
+    @test !any(h -> haskey(c.index, h), hashes)    # nothing is both archived and in the pool
+  end
+  # archive_size = 0 turns the archive off, rejects included
+  s0 = SearchStats(rows=false)
+  Random.seed!(28)
+  cs0 = main(max_iterations=20_000, verbose=false, initial_perms_size=10, stats=s0, debug_interval=1000,
+    window_cycle=8, window_start=10, window_adapt=false, archive_size=0)
+  @test s0.archived_rejects == 0 && s0.reintroduced == 0 && all(c -> isempty(c.archive), cs0)
+end

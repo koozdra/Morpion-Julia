@@ -45,7 +45,7 @@ If an entry stops being true (the code or defaults changed), mark it rather than
 
 ## Current state
 
-Defaults as of 2026-10-11:
+Defaults as of 2026-10-12:
 
 | Setting | Value | Note |
 |---|---|---|
@@ -60,7 +60,7 @@ Defaults as of 2026-10-11:
 | `es_step_back_fraction` | 0.4 | end_search unwinds up to 40% of the source game (was 0.25 until 2026-10-11) |
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
 | `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
-| `archive_size` | 100,000 | pruned perms are archived and put back when the window widens again: at each timer reset (or idle reset under `:counters`); since 2026-10-06 |
+| `archive_size`, `archive_rejects` | 100,000, true | pruned perms are archived and put back when the window widens again: at each timer reset (or idle reset under `:counters`); since 2026-10-06. Since 2026-10-12 children below the current window but inside the next reset's are archived too |
 | `checkpoint_interval`, `release_idle_caches`, `cache_min_picks` | 4, true, 8 | only apply to `dna_storage=:full` |
 
 ## Selection and search dynamics
@@ -320,7 +320,9 @@ Pooled over both A/Bs (16 paired seeds): fixed 2 +0.9 [−1.3, +3.2] (8 / 1 / 7)
 - **The first A/B's lead was winner's curse:** neither arm beat 2–10 on fresh seeds. As in 2026-09-24, a 2–15× per-evaluation advantage offline doesn't reach the final score; the search is limited by something other than how often a mutation improves its parent.
 - **1–4 found the two best games of the day (177 and 178),** but that is two runs out of 16, and 2–10 found 170 and 172 alongside them; the tail isn't distinguishable either.
 - **New games:** **177** (1–4, seed 2404) `IiAjf2jokjJLE6eTC…`, a new member of the `IiAjf2jokjJLE…` 177 family; **174** (fixed 2, seed 2405) `AYOOj1VpKGGjmFNDK…` and **173** (fixed 3, seed 2405) `AYOOj1VpKGGjmBNDK…`, both from the `AYOOj1VpKGG…` family. All added to the header of `population.jl`.
-- **New 178** (1–4, seed 2701 of the confirmation) `ZEhMTa5SEJgWSnjJ2kY3rrRPq/sn++zevl6DtNszde9n63f+6+44`. Replayed move by move: 178 legal moves, game over, 178 distinct dots. It is a **different dot configuration from the two 178s already in the header**, which are one configuration (they share all 178 dots under rotation/reflection about the cross centre). The new one shares at most 166 of its dots with them and 166–168 with every 176/177 in the header, so it is a variant within the same family. Not yet checked against published 178s. Also from the confirmation: **172** (2–10, seed 2704) `AYOOj1VtwCEKSlZS…` and **170** (2–10, seed 2702) `LoyBD52Cys5AUMZg…`.
+- **New 178** (1–4, seed 2701 of the confirmation) `ZEhMTa5SEJgWSnjJ2kY3rrRPq/sn++zevl6DtNszde9n63f+6+44`. Replayed move by move: 178 legal moves, game over, 178 distinct dots. It is a **different dot configuration from the two 178s already in the header**, which are one configuration (they share all 178 dots under rotation/reflection about the cross centre). The new one shares at most 166 of its dots with them and 166–168 with every 176/177 in the header, so it is a variant within the same family.
+  - **Against the published record** (Rosin's 178 from morpionsolitaire.com, converted to this engine's coordinates and replayed legally here), best of 8 symmetries: the new 178 shares **167 of 178 dots and 107 of 178 lines** with Rosin's grid. The header's two 178s share 177 dots and 171/174 lines with it (near copies), and Rosin's own 177A/B share 175–176 dots. So the new grid is the furthest 178 from Rosin's that we know of. It is still clearly the same family (167 shared dots) and does not beat the record.
+  - Not compared with the 178s in the 2013 koozdra.wordpress.com collection (its `grids.zip` link is dead), which the record site describes as very close to Rosin's grid. Also from the confirmation: **172** (2–10, seed 2704) `AYOOj1VtwCEKSlZS…` and **170** (2–10, seed 2702) `LoyBD52Cys5AUMZg…`.
 
 ## end_search
 
@@ -409,6 +411,23 @@ end_search picks the best unsearched perm of a random candidate, and skips the c
 - **Repeating a random perm hurts:** the only significant result, behind at every checkpoint. The repeats cost time and mostly re-find what the first search found.
 - **Repeating the best perm is cheap and neutral:** 7.6k extra calls for 4 points of end_search time (repeat searches of the max game stall out fast), with no gain.
 - **New game:** **170** (skip, seed 2508) `ISSMt+QY82FihGKk…`, added to the header of `population.jl`.
+
+### Archiving rejected children for the next reset (2026-10-12): **Adopted** (default since 2026-10-12; small positive, not significant); 20k archive **Rejected**
+Under the timer window, a child scoring below the current window (for example 157 when the max is 169 and the window is down to 160) was discarded, although the next reset (window back to `window_start` below the max) would accept it. `archive_rejects` (new; default on since 2026-10-12) puts such children (new, and at least `max_score - window_start`) into the archive, so the reset puts them back. The archive now also skips duplicates (`Candidate.archived`), and `SearchStats` counts `archived_rejects`.
+
+30 min × 8 paired seeds (2801–2808), current defaults:
+
+| Arm | Final scores | Mean (median) | sd | Per seed vs base [95%] | Better / tied / worse | Mean best at 5 / 10 / 20 / 30 min | Archived rejects | Put back at resets |
+|---|---|---|---|---|---|---|---|---|
+| base (off, archive 100k) | 163 164 159 159 157 161 162 161 | 160.8 (161.0) | 2.3 | — | — | 155.1 / 156.4 / 158.9 / 160.8 | 0 | 482k |
+| on, archive 100k | 163 167 157 159 157 159 162 170 | 161.8 (160.5) | 4.7 | +1.0 [−1.0, +3.5] | 2 / 4 / 2 | 155.4 / 157.8 / 160.8 / 161.8 | 324k | 521k |
+| on, archive 20k | 157 163 160 158 157 155 162 163 | 159.4 (159.0) | 3.1 | −1.4 [−3.4, +0.4] | 2 / 2 / 4 | 154.4 / 156.9 / 158.2 / 159.4 | 523k | 164k |
+
+- **Little is actually lost today:** without the option, resets already put back ~480k pruned perms per run. Archiving 324k rejects on top raised that only to 521k, because the archive keeps the best 100k and the rejects compete with pruned perms for the same slots.
+- **On with the 100k archive was ahead at every checkpoint** (+1.4 at 10 min, +1.9 at 20 min) and found a 170, but the final difference is within noise.
+- **A 20k archive throws most of it away** (164k put back) and was worse on half the seeds.
+- No throughput cost (65k iterations/s in both 100k arms).
+- **New game:** **170** (on, seed 2808) `E2wgDbSgtgTKNxSp…`, added to the header of `population.jl`.
 
 ### Stall rules (2026-10-11): stall length **Null**; boost ×4 **Rejected** at the 5,000 interval; boost ×2 **Open** (more consistent, not higher)
 UCB end_search stops a pass once it has played `stall_rollouts` × (mean rollout length) moves without a new result, or at 1,000 results. The UCB pass uses `es_ucb_stall_rollouts=2000` and the MAST pass `es_mast_stall_rollouts=500`. `es_stall_boost` (new, default 1) multiplies a call's stall limit once it has found a completion beating its source.

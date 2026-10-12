@@ -1,4 +1,5 @@
 # 166 HYhAHqWtBWCUVGkZRRxasI/rdT+39uUf9d22ap+y7/fX7/3+
+# 170 E2wgDbSgtgTKNxSpU6WeXa8Fa8U1b3Pl9Sut/rX/fvd3r///Q
 # 170 Ey0gDuBpwaSCtRHDsNrbIXYUQ//n9ev7Ivz3VX37/5/rf//9
 # 170 EykgD3IyGWSDsFAhMXIsPeav6+ju7V07eqfruddfv/nfO///6
 # 170 ISSMt+QY82FihGKk9UXLaGv7cr/m/AvE3jPrcXT//Wv7cv/+e
@@ -639,10 +640,13 @@ mutable struct Candidate
     # added to its pool during the current cycle
     window_start::Int
     cycle_yield::Int
+    # hashes of the archived perms (no duplicates in the archive)
+    archived::Set{UInt64}
 end
 
 Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter) =
-    Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter, Perm[], 20, 0)
+    Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter,
+        Perm[], 20, 0, Set{UInt64}())
 
 # Tighten back_accept by one and drop every perm (and its index entry) that
 # falls below the new acceptance window.
@@ -660,9 +664,10 @@ function prune_below!(c::Candidate; archive_size::Int=0)
     filter!(c.perms) do perm
         if perm.score < c.max_score - c.back_accept
             delete!(c.index, perm.moves_hash)
-            if archive_size > 0
+            if archive_size > 0 && !(perm.moves_hash in c.archived)
                 perm.cache = nothing   # a checkpoint cache is ~94 KB; rebuilt if it returns
                 push!(c.archive, perm)
+                push!(c.archived, perm.moves_hash)
             end
             false  # drop it from c.perms
         else
@@ -675,6 +680,8 @@ function prune_below!(c::Candidate; archive_size::Int=0)
         reverse!(c.archive)
         sort!(c.archive, by=p -> -p.score)   # stable
         resize!(c.archive, archive_size)
+        empty!(c.archived)
+        foreach(p -> push!(c.archived, p.moves_hash), c.archive)
     end
 
     c
@@ -719,6 +726,7 @@ function reintroduce!(c::Candidate)
         end
     end
     empty!(c.archive)
+    empty!(c.archived)
     sort!(collect(counts), by=x -> -x[1]), dropped
 end
 
@@ -766,6 +774,8 @@ mutable struct SearchStats
     # idle resets (window widenings) and archived perms put back at them
     idle_resets::Int
     reintroduced::Int
+    # children below the window archived for the next reset (archive_rejects)
+    archived_rejects::Int
     # end_search slots where the candidate's whole pool was already searched:
     # skipped, or repeated on an already-searched perm (es_when_all_searched)
     es_skips::Int
@@ -788,7 +798,7 @@ end
 
 SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
     Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
-    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
     reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
@@ -966,7 +976,11 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # end_search: what to do when every perm of the chosen candidate has already
     # been searched. :skip the call, or search again a :random perm or the :best
     # (highest scoring) one
-    es_when_all_searched::Symbol=:skip)
+    es_when_all_searched::Symbol=:skip,
+    # archive children that score below the current window but inside the
+    # next reset's (max_score - window_start), so the reset puts them back
+    # (needs archive_size > 0)
+    archive_rejects::Bool=true)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
@@ -1199,6 +1213,18 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     copyto!(stored.moves, eval_moves)
                 end
             end
+
+        elseif archive_rejects && archive_size > 0 && eval_score >= candidate.max_score - candidate.window_start &&
+               !is_in_index && !(eval_moves_hash in candidate.archived)
+            # below the current window but inside the next reset's: keep it for then
+            push!(candidate.archive, pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(
+                0,
+                stored_dna(dna),
+                copy(eval_moves),
+                eval_moves_hash
+            ))
+            push!(candidate.archived, eval_moves_hash)
+            stats === nothing || (stats.archived_rejects += 1)
         end
 
         if stats !== nothing && stats.rows && (stats_outcome != OUTCOME_REJECT || iteration % stats.reject_sample == 0)
