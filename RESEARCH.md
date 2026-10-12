@@ -273,7 +273,7 @@ Caveat: the baseline tested was `tune.jl`'s (`selection_skew=2`, `default_back_a
 ### Mutation size (2026-09-24): **Null**
 Late-run accept rate falls steadily with swap count k (k=2: 7.6 per 1k; k=10: 1.26 per 1k), and k=2 gives about 5× the new bests. Narrowing the range still doesn't change final scores: 2–4 vs 2–10 gave −0.3 [−4.4, +3.8] at 180 s × 26 seeds, and 2–3, 1–3 and 2–6 were also null at 3M iterations.
 
-### Which swaps matter (2026-10-11): measured offline; fixed-k A/B **Open**
+### Which swaps matter (2026-10-11): measured offline; fixed 2 and random 1–4 **Null** end to end (not confirmed on fresh seeds)
 A mutation applies k swaps (k uniform in `min_modifications:num_modifications`, 2–10). Each swap gives one move of the parent's game (picked uniformly) the dna value of a random line, and vice versa. Offline, on 150 high-scoring parents (25 captured end_search sources from each of 6 runs), 2,000 mutations per parent per k drawn exactly as `main` does, 3M evaluations in all. For every child that beat its parent, every subset of its swaps (in order) was evaluated to find the smallest that reaches the same score.
 
 | k | Changed | Beats parent | New, in window (≥ parent − 10) | Beats max | Gain ≥ 3 | First swapped position | Smallest subset that suffices: 1 / 2 / 3+ swaps |
@@ -291,7 +291,36 @@ A mutation applies k swaps (k uniform in `min_modifications:num_modifications`, 
 - **Extra swaps mostly do damage:** the share of children worse than the parent rises from 51% (k=1) to 99.6% (k=10), so improvements per evaluation fall about 15× from k=2 to k=10.
 - **Larger k makes bigger jumps when it works** (16% of k=10 improvements gain 3+, against 3% at k=1), but succeeds so rarely that big jumps are most frequent at k=3. Beating the run's max is flat across k=2–5.
 - **Small k is also cheaper in the real search:** the first swapped move is later in the game, so a checkpointed evaluation replays less.
-- Fixed k=2 gives 2.6× the improvements and 2.3× the new in-window children per evaluation of the current 2–10. The 2026-09-24 entry above found that narrower ranges didn't change final scores under older defaults, so this needs an end-to-end test: fixed 1, 2, 3 and 1–4 against 2–10 under the current defaults (pending).
+- Fixed k=2 gives 2.6× the improvements and 2.3× the new in-window children per evaluation of the current 2–10. The 2026-09-24 entry above found that narrower ranges didn't change final scores under older defaults, so this needs an end-to-end test.
+
+End to end, 30 min × 8 paired seeds (2401–2408), current defaults (`end_search_interval=5000`):
+
+| Swaps per child | Final scores | Mean (median) | Per seed vs 2–10 [95%] | Better / worse | Mean best at 5 / 10 / 20 / 30 min | Time in end_search |
+|---|---|---|---|---|---|---|
+| 2–10 (default) | 152 163 160 156 169 162 156 156 | 159.2 (158) | — | — | 152.5 / 154.0 / 158.6 / 159.2 | 28% |
+| fixed 1 | 161 161 158 162 156 159 157 158 | 159.0 (158.5) | −0.2 [−4.8, +3.8] | 4 / 4 | 153.1 / 156.1 / 158.2 / 159.0 | 12% |
+| fixed 2 | 162 157 162 154 174 164 157 162 | 161.5 (162) | +2.2 [−1.0, +5.4] | 6 / 2 | 155.0 / 156.6 / 161.0 / 161.5 | 17% |
+| fixed 3 | 156 155 159 153 173 157 162 161 | 159.5 (158) | +0.2 [−3.2, +3.5] | 4 / 4 | 151.4 / 156.1 / 157.1 / 159.5 | 22% |
+| **1–4** | 162 160 168 177 158 159 157 163 | **163.0** (161) | **+3.8 [−2.6, +10.2]** | 5 / 3 | **156.0 / 157.8 / 161.8 / 163.0** | 18% |
+
+- **Smaller mutations do better, as offline predicted, but not significantly:** 1–4 leads at every checkpoint (median gain +4), but its mean leans on one 177 (+21 on its seed). Fixed 2 wins 6 of 8 seeds.
+- **Fixed 1 gains nothing:** the occasional 2–4-swap child, the source of the larger jumps, seems to matter.
+- **Smaller mutations spend less time in end_search** (12–18% against 28%): more of their children are accepted, so pools are less often fully searched and fewer end_search slots are skipped.
+
+Confirmation on fresh seeds (2701–2708), same settings:
+
+| Swaps per child | Final scores | Mean (median) | sd | Per seed vs 2–10 [95%] | Better / tied / worse |
+|---|---|---|---|---|---|
+| 2–10 (default) | 159 170 156 172 161 162 160 160 | 162.5 (160.5) | 5.6 | — | — |
+| fixed 2 | 158 164 164 167 160 160 160 163 | 162.0 (161.5) | 3.0 | −0.5 [−3.1, +2.5] | 2 / 1 / 5 |
+| 1–4 | 178 158 157 162 158 160 162 159 | 161.8 (159.5) | 6.8 | −0.8 [−6.2, +5.9] | 3 / 0 / 5 |
+
+Pooled over both A/Bs (16 paired seeds): fixed 2 +0.9 [−1.3, +3.2] (8 / 1 / 7), 1–4 +1.5 [−2.8, +6.2] (8 / 0 / 8).
+
+- **The first A/B's lead was winner's curse:** neither arm beat 2–10 on fresh seeds. As in 2026-09-24, a 2–15× per-evaluation advantage offline doesn't reach the final score; the search is limited by something other than how often a mutation improves its parent.
+- **1–4 found the two best games of the day (177 and 178),** but that is two runs out of 16, and 2–10 found 170 and 172 alongside them; the tail isn't distinguishable either.
+- **New games:** **177** (1–4, seed 2404) `IiAjf2jokjJLE6eTC…`, a new member of the `IiAjf2jokjJLE…` 177 family; **174** (fixed 2, seed 2405) `AYOOj1VpKGGjmFNDK…` and **173** (fixed 3, seed 2405) `AYOOj1VpKGGjmBNDK…`, both from the `AYOOj1VpKGG…` family. All added to the header of `population.jl`.
+- **New 178** (1–4, seed 2701 of the confirmation) `ZEhMTa5SEJgWSnjJ2kY3rrRPq/sn++zevl6DtNszde9n63f+6+44`. Replayed move by move: 178 legal moves, game over, 178 distinct dots. It is a **different dot configuration from the two 178s already in the header**, which are one configuration (they share all 178 dots under rotation/reflection about the cross centre). The new one shares at most 166 of its dots with them and 166–168 with every 176/177 in the header, so it is a variant within the same family. Not yet checked against published 178s. Also from the confirmation: **172** (2–10, seed 2704) `AYOOj1VtwCEKSlZS…` and **170** (2–10, seed 2702) `LoyBD52Cys5AUMZg…`.
 
 ## end_search
 
@@ -366,7 +395,22 @@ Calling it 4× as often got further early (158.1 vs 154.4 at 5 min) but then nea
 - **The curve is flat-topped:** everything from 2,500 to 40,000 is within noise of the old default, so the setting matters less than the 5,000 result suggests. This reverses the 2026-10-02 result, which was measured under the old counter-driven window (and had one run stuck at 118).
 - Seeds 2307–2308 were rerun after the machine slept through their first attempt (see [How to run experiments](#how-to-run-experiments)).
 
-### Stall rules (2026-10-11): measured offline, **Open** end to end
+### Repeating end_search when the whole pool has been searched (2026-10-11): random **Rejected**, best **Null**
+end_search picks the best unsearched perm of a random candidate, and skips the call when every perm has been searched. That happens at about 35–45% of slots under the current defaults (more late in a run, when the window is narrow and pools are small). `es_when_all_searched` (new, default `:skip`) can instead search again a `:random` perm of the pool or the `:best` (highest scoring) one. `SearchStats` counts `es_skips` and `es_repeats`.
+
+30 min × 8 paired seeds (2501–2508), current defaults:
+
+| When the pool is all searched | Final scores | Mean (median) | Per seed vs skip [95%] | Better / tied / worse | Calls | Repeats | Time in end_search |
+|---|---|---|---|---|---|---|---|
+| skip (default) | 161 155 157 157 160 157 167 170 | 160.5 (158.5) | — | — | 12.5k | 0 (9.8k skipped) | 28% |
+| random | 156 155 157 156 163 155 158 161 | 157.6 (156.5) | −2.9 [−5.9, −0.1] | 1 / 2 / 5 | 20.1k | 6.8k | 35% |
+| best | 160 155 157 160 163 158 167 158 | 159.8 (159.0) | −0.8 [−4.2, +1.6] | 3 / 3 / 2 | 21.0k | 7.6k | 32% |
+
+- **Repeating a random perm hurts:** the only significant result, behind at every checkpoint. The repeats cost time and mostly re-find what the first search found.
+- **Repeating the best perm is cheap and neutral:** 7.6k extra calls for 4 points of end_search time (repeat searches of the max game stall out fast), with no gain.
+- **New game:** **170** (skip, seed 2508) `ISSMt+QY82FihGKk…`, added to the header of `population.jl`.
+
+### Stall rules (2026-10-11): stall length **Null**; boost ×4 **Rejected** at the 5,000 interval; boost ×2 **Open** (more consistent, not higher)
 UCB end_search stops a pass once it has played `stall_rollouts` × (mean rollout length) moves without a new result, or at 1,000 results. The UCB pass uses `es_ucb_stall_rollouts=2000` and the MAST pass `es_mast_stall_rollouts=500`. `es_stall_boost` (new, default 1) multiplies a call's stall limit once it has found a completion beating its source.
 
 Per call, offline on 300 captured calls at 40% depth (same RNG seed per call in every arm):
@@ -392,7 +436,30 @@ Per call, offline on 300 captured calls at 40% depth (same RNG seed per call in 
 - **The boost is the worst trade:** more than half of all calls beat their source, so it multiplies the cost of most calls.
 - **The MAST pass earns its keep:** dropping it loses 25% of the variants and 6 points of beats source for a third of the time.
 
-End to end (UCB 500, UCB 8000, MAST 2000, boost ×4 against the default): pending.
+End to end, 30 min × 8 paired seeds (2301–2308), `end_search_interval=10000`, with the default arm shared with the frequency A/B above:
+
+| Setting | Final scores | Mean | Per seed vs default [95%] | Better / tied / worse | Mean best at 5 / 10 / 20 / 30 min | Time in end_search |
+|---|---|---|---|---|---|---|
+| default (UCB 2000, MAST 500) | 158 159 159 160 159 157 153 159 | 158.0 | — | — | 154.8 / 156.1 / 157.0 / 158.0 | 13% |
+| UCB 500 | 161 157 157 161 158 154 162 159 | 158.6 | +0.6 [−1.5, +3.4] | 3 / 1 / 4 | 153.8 / 156.4 / 158.5 / 158.6 | 7% |
+| UCB 8000 | 159 157 157 156 158 161 159 155 | 157.8 | −0.2 [−2.5, +2.2] | 3 / 0 / 5 | 152.8 / 154.9 / 156.1 / 157.8 | 42% |
+| MAST 2000 | 161 157 156 159 158 163 159 159 | 159.0 | +1.0 [−1.1, +3.4] | 3 / 1 / 4 | 155.9 / 157.5 / 158.2 / 159.0 | 24% |
+| **boost ×4** | 162 161 156 157 159 163 161 162 | **160.1** | **+2.1 [−0.4, +4.6]** | **5 / 1 / 2** | **156.1 / 157.9 / 159.0 / 160.1** | 28% |
+
+- **Stall length doesn't matter end to end:** a 6× spread in time spent in end_search (UCB 500 vs UCB 8000) moved the mean by under a point.
+- **The boost was the most promising:** ahead at every checkpoint and on 5 of 8 seeds, but its interval spans zero, and it was measured at the old 10,000 interval.
+
+Confirmation on fresh seeds (2601–2608) at the new `end_search_interval=5000`, 30 min:
+
+| Boost | Final scores | Mean (median) | sd | Per seed vs off [95%] | Better / worse | Mean best at 5 / 10 / 20 / 30 min | Time in end_search |
+|---|---|---|---|---|---|---|---|
+| off (default) | 156 157 158 156 157 162 159 172 | 159.6 (157.5) | 5.4 | — | — | 147.0 / 154.9 / 158.1 / 159.6 | 20% |
+| ×2 | 161 160 159 160 164 158 161 160 | 160.4 (160.0) | 1.8 | +0.8 [−3.6, +4.2] | 6 / 2 | 156.8 / 157.9 / 158.6 / 160.4 | 39% |
+| ×4 | 159 159 163 118 158 157 158 165 | 154.6 (158.5) | 15.1 | −5.0 [−15.2, +1.8] | 4 / 4 | 151.2 / 151.8 / 153.1 / 154.6 | 50% |
+
+- **×4 is too costly at 5,000:** half the run goes to end_search, halving iterations. One run stuck at 118 (its pool collapsed to 246 perms by 5 minutes).
+- **×2 is consistent rather than better:** all 8 runs within 158–164 (sd 1.8 against 5.4), ahead on 6 of 8 seeds and much faster early (156.8 against 147.0 at 5 minutes), but the mean gain is small, and the default's 172 outscores anything it found.
+- **New game:** **172** (off, seed 2608) `0yAij1VlSSRWkMM4…`, a variant of the `0yAij1VlSSRW…` 177/178 family; added to the header of `population.jl`.
 
 ### Comprehensiveness under the current defaults (2026-10-02): measured
 298 end_search calls sampled from 6 × 10-minute runs (2026-10-02 defaults, `improvement_step_up=1000`), each scored against exhaustive ground truth over the 25% wind-back window, 2 seeds per call per variant.

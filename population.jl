@@ -1,13 +1,19 @@
 # 166 HYhAHqWtBWCUVGkZRRxasI/rdT+39uUf9d22ap+y7/fX7/3+
 # 170 Ey0gDuBpwaSCtRHDsNrbIXYUQ//n9ev7Ivz3VX37/5/rf//9
 # 170 EykgD3IyGWSDsFAhMXIsPeav6+ju7V07eqfruddfv/nfO///6
+# 170 ISSMt+QY82FihGKk9UXLaGv7cr/m/AvE3jPrcXT//Wv7cv/+e
+# 170 LoyBD52Cys5AUMZgVIVt3XM31Nf7v3Nk/lL/du+23/XLL/fbw
 # 170 qiQRjpmQsgU2CKFJbAAfUVaF5deL//zru/vbens3yfr31z+/trw
 # 171 0yAij1VlSSRWksIzgzcdfpnkXTvX/Jn+meaz21Z+rf/1sX59/g
 # 171 F0wgDolGsg5l0kkIno6jbiovx31/l5b3v42y8je9dvt2d//vvQ
+# 172 0yAij1VlSSRWkMM4M3Arjrd/2XLr5fl/x7zuu3Xu1/32//a+
 # 172 AENMhclbKcGxHhKhtGnBJdfX1DeJf7L6X+vt09fU7/Ptcv//va
+# 172 AYOOj1VtwCEKSlZSrUDYzo+pZb/2r99/y93O3rvPuv75//bv
 # 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
 # 172 LoyBD5plSCpgxshpTUZV7x4z176/8O/mfz+XX57zt/3z/+r4
 # 172 UkiDTozaJmq4Mi4JQpJhYu3LPXzf7Tbzf1eV7+rOrb99//udfg
+# 173 AYOOj1VpKGGjmBNDKiyjHW7+/c9XvJrvnK1euy31f/3eXv/3u
+# 174 AYOOj1VpKGGjmFNDKiyruq3ft/utX15Nd3vmqv3/3u5a/vb/
 # 174 FEBMv6lokkqKS4cwzBofV1R1Xre+/uWv99l+da9v/vbL9d7f4
 # 175 CBMXT2TomgmTmJOEtJJqs/Uda9vn8Lz+M81ndct93r/3p9/9+0
 # 175 KyQihtyDUKLaq0EcpmqsRa/XuYvfN79c9T0t356/9+23fb5y/U
@@ -24,8 +30,10 @@
 # 177 FEBMv6lokkqKS4cwzB4f1Vc/fb7lr9d8RvfNu/Nv/p5vv/t7b
 # 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
 # 177 IiAjf2jokjJLE4Zwyk4vWzYlXn77f1lf/be7tN7f/p5fv/t7X
+# 177 IiAjf2jokjJLE6eTC+plL+j5/o7/HO3qTxvV89vK9fvY+v+/3o
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 # 178 7EBET5ZlRiSHYc0gSqEaxn9OfXDfr79Vak78WKOe7yv//Wm//9v0
+# 178 ZEhMTa5SEJgWSnjJ2kY3rrRPq/sn++zevl6DtNszde9n63f+6+44
 
 include("morpion.jl")
 using Random
@@ -758,6 +766,10 @@ mutable struct SearchStats
     # idle resets (window widenings) and archived perms put back at them
     idle_resets::Int
     reintroduced::Int
+    # end_search slots where the candidate's whole pool was already searched:
+    # skipped, or repeated on an already-searched perm (es_when_all_searched)
+    es_skips::Int
+    es_repeats::Int
     # timer cycles: (iteration, configurations added during the cycle, step
     # back used, step back for the next cycle)
     cycles::Vector{NTuple{4,Int}}
@@ -776,7 +788,7 @@ end
 
 SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
     Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
-    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
     reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
@@ -950,10 +962,16 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     window_adapt_max::Int=30,
     # end_search: once a call has found a completion beating its source, its
     # stall limit is multiplied by this (1 = no boost)
-    es_stall_boost::Real=1)
+    es_stall_boost::Real=1,
+    # end_search: what to do when every perm of the chosen candidate has already
+    # been searched. :skip the call, or search again a :random perm or the :best
+    # (highest scoring) one
+    es_when_all_searched::Symbol=:skip)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
+    es_when_all_searched in (:skip, :random, :best) ||
+        throw(ArgumentError("es_when_all_searched must be :skip, :random or :best, got $es_when_all_searched"))
     1 <= min_modifications <= num_modifications || throw(ArgumentError("need 1 <= min_modifications <= num_modifications, got $min_modifications:$num_modifications"))
     config_key in (:points, :lines) || throw(ArgumentError("config_key must be :points or :lines, got $config_key"))
     window_schedule in (:counters, :timer) || throw(ArgumentError("window_schedule must be :counters or :timer, got $window_schedule"))
@@ -1214,7 +1232,18 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 end
             end
 
-            if !haskey(end_searched, best.moves_hash)
+            if haskey(end_searched, best.moves_hash)
+                # every perm in the pool has been searched already
+                if es_when_all_searched === :skip
+                    stats === nothing || (stats.es_skips += 1)
+                else
+                    best = es_when_all_searched === :random ? rand(end_search_candidate.perms) :
+                           argmax(p -> p.score, end_search_candidate.perms)
+                    stats === nothing || (stats.es_repeats += 1)
+                end
+            end
+
+            if !haskey(end_searched, best.moves_hash) || es_when_all_searched !== :skip
                 es_source = pack_mode ? pack_decode!(codec, Move[], best.pack) : best.moves
 
                 results = if es_mode === :ucb

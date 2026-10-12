@@ -395,3 +395,23 @@ end
   @test_throws ArgumentError main(max_iterations=10, verbose=false, min_modifications=0)
   @test_throws ArgumentError main(max_iterations=10, verbose=false, min_modifications=5, num_modifications=4)
 end
+
+@testset "end_search repeats a searched perm instead of skipping, when asked" begin
+  counts = Dict{Symbol,Tuple{Int,Int,Int}}()
+  for mode in (:skip, :random, :best)
+    s = SearchStats(rows=false)
+    Random.seed!(27)
+    # a 1-point window keeps the pool small, so it is often fully searched
+    main(max_iterations=10_000, end_search_interval=50, verbose=false, initial_perms_size=10, stats=s,
+      window_start=1, window_adapt=false, window_cycle=4, debug_interval=1000, es_when_all_searched=mode)
+    counts[mode] = (length(s.end_searches), s.es_skips, s.es_repeats)
+  end
+  slots = 10_000 ÷ 50
+  @test counts[:skip][2] > 0 && counts[:skip][3] == 0
+  @test counts[:skip][1] + counts[:skip][2] == slots
+  for mode in (:random, :best)
+    @test counts[mode][2] == 0 && counts[mode][3] > 0
+    @test counts[mode][1] == slots   # every slot runs an end_search
+  end
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, es_when_all_searched=:again)
+end
