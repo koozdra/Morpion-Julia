@@ -429,18 +429,18 @@ Under the timer window, a child scoring below the current window (for example 15
 - No throughput cost (65k iterations/s in both 100k arms).
 - **New game:** **170** (on, seed 2808) `E2wgDbSgtgTKNxSp…`, added to the header of `population.jl`.
 
-### Archive size with rejects archived (2026-10-12): 300k **Adopted** (default since 2026-10-12)
-With `archive_rejects=true`, `archive_size` 100k (old default) vs 300k vs 1M, 30 min × 8 paired seeds (2901–2908). After the first 4 seeds:
+### Archive size with rejects archived (2026-10-12): 300k **Adopted** (default since 2026-10-12; final result slightly negative, within a point)
+With `archive_rejects=true`, `archive_size` 100k (old default) vs 300k vs 1M, 30 min × 8 paired seeds (2901–2908):
 
-| Archive | Final scores | Mean | vs 100k | Put back at resets | Peak RSS |
-|---|---|---|---|---|---|
-| 100k | 164 162 159 174 | 164.8 | — | 300k–715k | 450–506 MB |
-| 300k | 164 160 159 174 | 164.2 | −0.5 | 420k–1.3M | 494–573 MB |
-| 1M | 164 160 159 174 | 164.2 | −0.5 | 420k–1.4M | 494–611 MB |
+| Archive | Final scores | Mean (median) | Per seed vs 100k [95%] | Better / tied / worse | Mean best at 5 / 10 / 20 / 30 min | Put back at resets | Peak RSS | Iterations/s |
+|---|---|---|---|---|---|---|---|---|
+| 100k | 164 162 159 174 159 162 155 162 | 162.1 (162.0) | — | — | 155.5 / 159.9 / 161.9 / 162.1 | 545k | 469 MB | 65k |
+| 300k | 164 160 159 174 158 162 155 162 | 161.8 (161.0) | −0.4 [−0.9, 0.0] | 0 / 6 / 2 | 154.9 / 159.2 / 161.8 / 161.8 | 1,000k | 541 MB | 61k |
+| 1M | 164 160 159 174 158 162 155 162 | 161.8 (161.0) | −0.4 [−0.9, 0.0] | 0 / 6 / 2 | 154.9 / 159.2 / 161.8 / 161.8 | 1,041k | 559 MB | 62k |
 
-- **The cap stops binding between 100k and 300k:** on two of four seeds the 300k and 1M runs were identical move for move (the archive never passed 300k), so anything above ~300k changes nothing.
-- **More is kept at no cost:** roughly twice as many perms back at each reset, under 0.5% of time in maintenance, no change in iterations/s, ~100 MB more memory.
-- Adopted as the default on cost grounds after the first round, with scores level; the final round is recorded below when it lands.
+- **Nothing above ~300k matters:** 300k and 1M produced the same best game on all 8 seeds; the archive rarely passes 300k.
+- **Keeping more didn't help:** 300k puts back about twice as many perms at each reset, but scored the same on 6 seeds and one point lower on 2 (the interval just touches zero), with about 6% fewer iterations/s and ~70 MB more memory. Maintenance stays under 0.5% of time.
+- Adopted as the default after the first round (scores level then); the full result is a wash, slightly against. 100k is the safe choice if this is revisited.
 - **New games:** two **174**s on seed 2904, `0yAij1VlSSRWksIzgzcJ/dKNrv2f+…` (100k) and `0yAij1VlSSRWksIzgzcJdat35391…` (300k and 1M), from the `0yAij1VlSSRW…` family; added to the header of `population.jl`.
 
 ### Stall rules (2026-10-11): stall length **Null**; boost ×4 **Rejected** at the 5,000 interval; boost ×2 **Open** (more consistent, not higher)
