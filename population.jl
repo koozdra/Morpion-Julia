@@ -36,6 +36,7 @@
 # 177 IiAjf2jokjJLE6eTC+plL+j5/o7/HO3qTxvV89vK9fvY+v+/3o
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 # 178 7EBET5ZlRiSHYc0gSqEaxn9OfXDfr79Vak78WKOe7yv//Wm//9v0
+# 178 CBMXT2TomgiXeiKNAlJFlP65fcOv199WaUv2yjHO7Zv/7uW//370
 # 178 ZEhMTa5SEJgWSnjJ2kY3rrRPq/sn++zevl6DtNszde9n63f+6+44
 
 include("morpion.jl")
@@ -280,9 +281,9 @@ function end_search_ucb(moves::Array{Move,1}, back_accept;
 
         h = stats === nothing ?
             ucb_completion!(eval_board, eval_possible_moves, eval_suffix,
-                boards[k], possibles[k], prefix_hashes[k], lines) :
+            boards[k], possibles[k], prefix_hashes[k], lines) :
             mast_completion!(stats, eval_board, eval_possible_moves, eval_suffix,
-                boards[k], possibles[k], prefix_hashes[k], score - k, lines)
+            boards[k], possibles[k], prefix_hashes[k], score - k, lines)
         played = length(eval_suffix)
         found = score - k + played > score - back_accept && !haskey(index, h)
         found && (index[h] = vcat(moves[1:(score-k)], eval_suffix))
@@ -404,14 +405,14 @@ function end_search_nrpa(moves::Array{Move,1}, back_accept;
         board = initial_board()
         possible = initial_moves()
         h = UInt64(0)
-        for m in moves[1:score-depth]
+        for m in moves[1:(score-depth)]
             make_move(board, m, possible)
             h ⊻= move_key(m, lines)
         end
-        run = NRPARun(board, possible, h, moves[1:score-depth], score - back_accept, lines,
+        run = NRPARun(board, possible, h, moves[1:(score-depth)], score - back_accept, lines,
             zeros(UInt8, 46 * 46), Move[], Float64[], results, deadline)
         policy = zeros(46 * 46 * 4)
-        continuation = moves[score-depth+1:end]
+        continuation = moves[(score-depth+1):end]
         for _ in 1:warm
             policy = nrpa_adapt(run, policy, continuation)
         end
@@ -1217,7 +1218,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             end
 
         elseif archive_rejects && archive_size > 0 && eval_score >= candidate.max_score - candidate.window_start &&
-               !is_in_index && !(eval_moves_hash in candidate.archived)
+            !is_in_index && !(eval_moves_hash in candidate.archived)
             # below the current window but inside the next reset's: keep it for then
             push!(candidate.archive, pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(
                 0,
@@ -1282,12 +1283,12 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         warm=es_nrpa_warm, budget_s=es_nrpa_budget, lines=lines_key)
                 elseif es_mode === :ucb_then_mast
                     merge!(end_search_ucb(es_source, 5; step_back_fraction=es_step_back_fraction,
-                            stall_rollouts=es_ucb_stall_rollouts, lines=lines_key, stall_boost=es_stall_boost),
+                        stall_rollouts=es_ucb_stall_rollouts, lines=lines_key, stall_boost=es_stall_boost),
                         end_search_ucb(es_source, 5; step_back_fraction=es_step_back_fraction,
                             stall_rollouts=es_mast_stall_rollouts, lines=lines_key, mast=true, stall_boost=es_stall_boost))
                 elseif es_mode === :mast_then_nrpa
                     merge!(end_search_ucb(es_source, 5; step_back_fraction=es_step_back_fraction,
-                            stall_rollouts=es_mast_stall_rollouts, lines=lines_key, mast=true),
+                        stall_rollouts=es_mast_stall_rollouts, lines=lines_key, mast=true),
                         end_search_nrpa(es_source, 5; level=es_nrpa_level, iterations=es_nrpa_iterations,
                             warm=es_nrpa_warm, budget_s=es_nrpa_budget, lines=lines_key))
                 else
@@ -1461,7 +1462,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         #   UCB-style: normalized score + sqrt(2) * sqrt(log(c.visits + 1) / p.visits)
         if iteration % sort_interval == 0
             by_score = sort_rotation === :score ||
-                       (sort_rotation === :alternate && (iteration ÷ sort_interval) % 2 == 0)
+                (sort_rotation === :alternate && (iteration ÷ sort_interval) % 2 == 0)
             for c in candidates
                 if by_score
                     sort!(c.perms, by=p -> (-p.score, p.visits))
