@@ -14,6 +14,8 @@
 # 172 LoyBD5plSCpgxshpTUZV7x4z176/8O/mfz+XX57zt/3z/+r4
 # 172 UkiDTozaJmq4Mi4JQpJhYu3LPXzf7Tbzf1eV7+rOrb99//udfg
 # 173 AYOOj1VpKGGjmBNDKiyjHW7+/c9XvJrvnK1euy31f/3eXv/3u
+# 174 0yAij1VlSSRWksIzgzcJ/dKNrv2f+6tf6b7n1Z+/77uO91+/g
+# 174 0yAij1VlSSRWksIzgzcJdat35391a9daO/evWp/v++7L3bfv4
 # 174 AYOOj1VpKGGjmFNDKiyruq3ft/utX15Nd3vmqv3/3u5a/vb/
 # 174 FEBMv6lokkqKS4cwzBofV1R1Xre+/uWv99l+da9v/vbL9d7f4
 # 175 CBMXT2TomgmTmJOEtJJqs/Uda9vn8Lz+M81ndct93r/3p9/9+0
@@ -933,7 +935,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     new_best_first::Bool=false,
     # keep up to this many pruned perms per candidate and put them back when the
     # idle reset widens the window (0 = pruned perms are dropped)
-    archive_size::Int=100_000,
+    archive_size::Int=300_000,
     # es_mode = :nrpa settings: NRPA level, iterations per level, warm-start
     # adaptations towards the source, and seconds per end_search call
     es_nrpa_level::Int=2,

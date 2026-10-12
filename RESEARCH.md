@@ -60,7 +60,7 @@ Defaults as of 2026-10-12:
 | `es_step_back_fraction` | 0.4 | end_search unwinds up to 40% of the source game (was 0.25 until 2026-10-11) |
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
 | `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
-| `archive_size`, `archive_rejects` | 100,000, true | pruned perms are archived and put back when the window widens again: at each timer reset (or idle reset under `:counters`); since 2026-10-06. Since 2026-10-12 children below the current window but inside the next reset's are archived too |
+| `archive_size`, `archive_rejects` | 300,000, true | pruned perms are archived and put back when the window widens again: at each timer reset (or idle reset under `:counters`); since 2026-10-06. Since 2026-10-12 children below the current window but inside the next reset's are archived too, and the archive holds 300k (was 100k) |
 | `checkpoint_interval`, `release_idle_caches`, `cache_min_picks` | 4, true, 8 | only apply to `dna_storage=:full` |
 
 ## Selection and search dynamics
@@ -428,6 +428,20 @@ Under the timer window, a child scoring below the current window (for example 15
 - **A 20k archive throws most of it away** (164k put back) and was worse on half the seeds.
 - No throughput cost (65k iterations/s in both 100k arms).
 - **New game:** **170** (on, seed 2808) `E2wgDbSgtgTKNxSp…`, added to the header of `population.jl`.
+
+### Archive size with rejects archived (2026-10-12): 300k **Adopted** (default since 2026-10-12)
+With `archive_rejects=true`, `archive_size` 100k (old default) vs 300k vs 1M, 30 min × 8 paired seeds (2901–2908). After the first 4 seeds:
+
+| Archive | Final scores | Mean | vs 100k | Put back at resets | Peak RSS |
+|---|---|---|---|---|---|
+| 100k | 164 162 159 174 | 164.8 | — | 300k–715k | 450–506 MB |
+| 300k | 164 160 159 174 | 164.2 | −0.5 | 420k–1.3M | 494–573 MB |
+| 1M | 164 160 159 174 | 164.2 | −0.5 | 420k–1.4M | 494–611 MB |
+
+- **The cap stops binding between 100k and 300k:** on two of four seeds the 300k and 1M runs were identical move for move (the archive never passed 300k), so anything above ~300k changes nothing.
+- **More is kept at no cost:** roughly twice as many perms back at each reset, under 0.5% of time in maintenance, no change in iterations/s, ~100 MB more memory.
+- Adopted as the default on cost grounds after the first round, with scores level; the final round is recorded below when it lands.
+- **New games:** two **174**s on seed 2904, `0yAij1VlSSRWksIzgzcJ/dKNrv2f+…` (100k) and `0yAij1VlSSRWksIzgzcJdat35391…` (300k and 1M), from the `0yAij1VlSSRW…` family; added to the header of `population.jl`.
 
 ### Stall rules (2026-10-11): stall length **Null**; boost ×4 **Rejected** at the 5,000 interval; boost ×2 **Open** (more consistent, not higher)
 UCB end_search stops a pass once it has played `stall_rollouts` × (mean rollout length) moves without a new result, or at 1,000 results. The UCB pass uses `es_ucb_stall_rollouts=2000` and the MAST pass `es_mast_stall_rollouts=500`. `es_stall_boost` (new, default 1) multiplies a call's stall limit once it has found a completion beating its source.
