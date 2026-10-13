@@ -45,7 +45,7 @@ If an entry stops being true (the code or defaults changed), mark it rather than
 
 ## Current state
 
-Defaults as of 2026-10-12:
+Defaults as of 2026-10-13:
 
 | Setting | Value | Note |
 |---|---|---|
@@ -57,6 +57,7 @@ Defaults as of 2026-10-12:
 | `idle_reset` / `improvement_step_up` | 32 / 10 | only used with `window_schedule=:counters` (was 512 / 10000 on 2026-10-02, 128 / 100 on 2026-10-04) |
 | `initial_perms_size` | 100 | random perms each candidate starts with |
 | `end_search_interval` | 5,000 | iterations between end_search calls, about 20% of time in end_search (was 10,000 until 2026-10-11) |
+| `es_when_all_searched` | `:random` | when every perm of the chosen candidate has been end-searched, search a random one again (was `:skip` until 2026-10-13; chosen by the user although the A/B measured −2.9 [−5.9, −0.1], see [Repeating end_search](#repeating-end_search-when-the-whole-pool-has-been-searched-2026-10-11-random-rejected-in-the-ab-made-the-default-on-2026-10-13-by-the-users-choice-best-null)) |
 | `es_step_back_fraction` | 0.4 | end_search unwinds up to 40% of the source game (was 0.25 until 2026-10-11) |
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
 | `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
@@ -397,7 +398,7 @@ Calling it 4× as often got further early (158.1 vs 154.4 at 5 min) but then nea
 - **The curve is flat-topped:** everything from 2,500 to 40,000 is within noise of the old default, so the setting matters less than the 5,000 result suggests. This reverses the 2026-10-02 result, which was measured under the old counter-driven window (and had one run stuck at 118).
 - Seeds 2307–2308 were rerun after the machine slept through their first attempt (see [How to run experiments](#how-to-run-experiments)).
 
-### Repeating end_search when the whole pool has been searched (2026-10-11): random **Rejected**, best **Null**
+### Repeating end_search when the whole pool has been searched (2026-10-11): random **Rejected** in the A/B (made the default on 2026-10-13 by the user's choice), best **Null**
 end_search picks the best unsearched perm of a random candidate, and skips the call when every perm has been searched. That happens at about 35–45% of slots under the current defaults (more late in a run, when the window is narrow and pools are small). `es_when_all_searched` (new, default `:skip`) can instead search again a `:random` perm of the pool or the `:best` (highest scoring) one. `SearchStats` counts `es_skips` and `es_repeats`.
 
 30 min × 8 paired seeds (2501–2508), current defaults:

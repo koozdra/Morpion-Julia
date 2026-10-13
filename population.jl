@@ -979,7 +979,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # end_search: what to do when every perm of the chosen candidate has already
     # been searched. :skip the call, or search again a :random perm or the :best
     # (highest scoring) one
-    es_when_all_searched::Symbol=:skip,
+    es_when_all_searched::Symbol=:random,
     # archive children that score below the current window but inside the
     # next reset's (max_score - window_start), so the reset puts them back
     # (needs archive_size > 0)
