@@ -770,6 +770,25 @@ Researched 2026-09-24.
 - **Rosin's grids:** http://www.morpionsolitaire.com/Grid5T178Rosin.txt (also 177RosinA/B), in Pentasol format. To replay one here: the reference point R is cross cell (3,3), (a,b) is (x,y), and line cells are dot + (i − offset)·v for i in −2..2, with v = −1 × {'|':(0,1), '-':(1,0), '/':(1,−1), '\':(1,1)}.
 - **Directions to skip:** deep learning (5D only, below record), symmetric-grid search (ceiling about 136), LP pruning.
 
+
+### Convergence against plain NRPA (2026-10-12): measured
+Same engine, same machine, one core per run. NRPA as in Rosin (2011): softmax playouts over one weight per line, N = 100 iterations per level, α = 1, from the empty cross, about 40k playouts/s here (a level-3 run is 1M playouts, ~25 s; a level-4 run is 100M, ~50 min). Our algorithm: 56 runs of 30 min at or near the current defaults (2026-10-11/12 A/Bs). Mean best so far (NRPA: 8 runs each):
+
+| Time | Ours (median) | NRPA level 3, repeated | NRPA level 4 |
+|---|---|---|---|
+| 1 min | 139.9 (145) | 149.4 | 150.6 |
+| 2 min | 148.0 (152) | 150.6 | 152.2 |
+| 5 min | 154.2 (155) | 154.2 | 154.4 |
+| 10 min | 157.7 (157) | 155.1 | 155.8 |
+| 20 min | 160.3 (159) | 156.4 | 158.4 |
+| 30 min | 161.3 (160) | 157.2 | 159.5 |
+| 60 min | — | — | 160.4 |
+| Best | 174 (12% of runs ≥ 170) | 159 | 166 (no run ≥ 170) |
+
+- **NRPA starts faster** (about 10 points ahead at 1 min), the curves cross around 5 min, and ours is ahead from 10 min on: +4.1 over level 3 and +1.8 over level 4 at 30 min. Level 4 needs 60 min to reach where ours is at 20.
+- **The tail is the real difference:** 12% of our 30-minute runs reached 170+, and other arms of the same A/Bs found 177 and 178; no NRPA run reached 170 in up to an hour.
+- **Caveat:** this is plain single-threaded NRPA at levels 3–4. The 177/178 records came from level-5 runs (about 3 days each at this speed) with enhancements and many cores, so this says nothing about NRPA's ceiling, only its speed at short budgets.
+
 ## Open questions and next directions
 
 Roughly in priority order:
