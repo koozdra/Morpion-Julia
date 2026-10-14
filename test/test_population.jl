@@ -222,7 +222,7 @@ end
   rng = MersenneTwister(41)
   perms = map(1:10) do _
     g = random_game(rng)[2]
-    Perm(0, UInt16[], EMPTY_MOVES, points_hash(g), nothing, 0, -1, length(g), pack_encode(codec, g), 0)
+    Perm(0, UInt16[], EMPTY_MOVES, points_hash(g), nothing, 0, -1, length(g), pack_encode(codec, g), 0, lines_hash(g))
   end
   out = Move[]
   for _ in 1:200
@@ -435,4 +435,31 @@ end
   cs0 = main(max_iterations=20_000, verbose=false, initial_perms_size=10, stats=s0, debug_interval=1000,
     window_cycle=8, window_start=10, window_adapt=false, archive_size=0)
   @test s0.archived_rejects == 0 && s0.reintroduced == 0 && all(c -> isempty(c.archive), cs0)
+end
+
+@testset "lines_key follows the lines each perm stores" begin
+  for storage in (:moves, :pack)
+    Random.seed!(29)
+    cs = main(max_iterations=30_000, verbose=false, initial_perms_size=10, dna_storage=storage)
+    codec = PackCodec()
+    stored(p) = storage === :pack ? pack_decode!(codec, Move[], p.pack) : p.moves
+    @test all(c -> all(p -> p.lines_key == lines_hash(stored(p)), c.perms), cs)
+  end
+end
+
+@testset "es_searched_key=:lines searches an island again once its lines change" begin
+  srcs = Dict{Symbol,Vector{Vector{Move}}}()
+  for key in (:points, :lines)
+    s = SearchStats(rows=false, keep_es_sources=true)
+    Random.seed!(30)
+    main(max_iterations=40_000, end_search_interval=200, verbose=false, initial_perms_size=10, stats=s,
+      es_when_all_searched=:skip, es_searched_key=key)
+    srcs[key] = s.es_sources
+  end
+  # by points: never the same dots twice; by lines: never the same lines twice,
+  # but the same dots again with other lines
+  @test allunique(points_hash.(srcs[:points]))
+  @test allunique(lines_hash.(srcs[:lines]))
+  @test !allunique(points_hash.(srcs[:lines]))
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, es_searched_key=:dots)
 end

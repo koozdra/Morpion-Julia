@@ -572,9 +572,13 @@ mutable struct Perm
     pack::Vector{UInt8}
     # slot of its decoded moves in the DecodeCache (0 = not cached)
     slot::Int
+    # lines hash of the game currently stored (it changes when a child draws the
+    # same dots with other lines); main's es_searched_key=:lines keys on it
+    lines_key::UInt64
 end
 
-Perm(visits, perm, moves, moves_hash) = Perm(visits, perm, moves, moves_hash, nothing, 0, -1, length(moves), EMPTY_PACK, 0)
+Perm(visits, perm, moves, moves_hash) =
+    Perm(visits, perm, moves, moves_hash, nothing, 0, -1, length(moves), EMPTY_PACK, 0, lines_hash(moves))
 
 # Decoded moves of recently picked packed perms (dna_storage=:pack), in a fixed
 # number of reusable slots with CLOCK replacement (an approximation of LRU: a
@@ -955,7 +959,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # cycle going)
     window_schedule::Symbol=:timer,
     window_cycle::Int=128,
-    window_start::Int=10,
+    window_start::Int=5,
     # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
     # 1 narrows linearly, > 1 narrows fast and spends longer near the max
     window_shape::Real=1,
@@ -969,8 +973,8 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # window_adapt_max), otherwise narrow it (down to window_adapt_min);
     # window_start is the starting value
     window_adapt::Bool=true,
-    window_adapt_target::Int=50_000,
-    window_adapt_step::Int=2,
+    window_adapt_target::Int=5_000,
+    window_adapt_step::Int=1,
     window_adapt_min::Int=1,
     window_adapt_max::Int=30,
     # end_search: once a call has found a completion beating its source, its
@@ -983,10 +987,15 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # archive children that score below the current window but inside the
     # next reset's (max_score - window_start), so the reset puts them back
     # (needs archive_size > 0)
-    archive_rejects::Bool=true)
+    archive_rejects::Bool=true,
+    # end_search remembers searched configurations by their :points (dots) or
+    # by their current :lines; islands keep their dots while their lines drift
+    es_searched_key::Symbol=:lines)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
     dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
+    es_searched_key in (:points, :lines) ||
+        throw(ArgumentError("es_searched_key must be :points or :lines, got $es_searched_key"))
     es_when_all_searched in (:skip, :random, :best) ||
         throw(ArgumentError("es_when_all_searched must be :skip, :random or :best, got $es_when_all_searched"))
     1 <= min_modifications <= num_modifications || throw(ArgumentError("need 1 <= min_modifications <= num_modifications, got $min_modifications:$num_modifications"))
@@ -999,7 +1008,8 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     pack_mode = dna_storage === :pack
     codec = PackCodec()
     pick_moves = Move[]   # the picked perm's decoded moves under :pack
-    packed_perm(moves, h) = Perm(0, UInt16[], EMPTY_MOVES, h, nothing, 0, -1, length(moves), pack_encode(codec, moves), 0)
+    packed_perm(moves, h) = Perm(0, UInt16[], EMPTY_MOVES, h, nothing, 0, -1, length(moves), pack_encode(codec, moves), 0,
+        lines_hash(moves))
     decode_cache = DecodeCache(pack_mode ? pack_cache_size : 0)
     # with moves_only, pool perms store no dna; the picked perm's dna is rebuilt
     # into dna_buf
@@ -1010,6 +1020,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     candidates = Candidate[]
 
     end_searched = Dict{UInt64,Bool}()
+    # what end_searched records: a configuration's dots, or its current lines
+    # (then an island whose lines have drifted since its search is searched again)
+    es_key(p::Perm) = es_searched_key === :lines ? p.lines_key : p.moves_hash
 
 
 
@@ -1215,6 +1228,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     resize!(stored.moves, length(eval_moves))
                     copyto!(stored.moves, eval_moves)
                 end
+                stored.lines_key = lines_hash(eval_moves)
             end
 
         elseif archive_rejects && archive_size > 0 && eval_score >= candidate.max_score - candidate.window_start &&
@@ -1253,7 +1267,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             stats === nothing || (es_t0 = time_ns())
             end_search_candidate = rand(candidates)
             best = argmax(end_search_candidate.perms) do p
-                is_end_searched = haskey(end_searched, p.moves_hash)
+                is_end_searched = haskey(end_searched, es_key(p))
                 if is_end_searched
                     0
                 else
@@ -1261,7 +1275,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 end
             end
 
-            if haskey(end_searched, best.moves_hash)
+            if haskey(end_searched, es_key(best))
                 # every perm in the pool has been searched already
                 if es_when_all_searched === :skip
                     stats === nothing || (stats.es_skips += 1)
@@ -1272,7 +1286,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 end
             end
 
-            if !haskey(end_searched, best.moves_hash) || es_when_all_searched !== :skip
+            if !haskey(end_searched, es_key(best)) || es_when_all_searched !== :skip
                 es_source = pack_mode ? pack_decode!(codec, Move[], best.pack) : best.moves
 
                 results = if es_mode === :ucb
@@ -1348,7 +1362,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     end
                 end
 
-                end_searched[best.moves_hash] = true
+                end_searched[es_key(best)] = true
 
                 if stats !== nothing
                     push!(stats.end_searches, (iteration, best.score, es_max_before, length(results),
