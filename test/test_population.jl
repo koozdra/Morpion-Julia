@@ -473,9 +473,9 @@ end
     close(io)
     readlines(path)
   end
-  lines = filter(l -> occursin("trace:", l), out)
-  @test length(lines) == 20_000 ÷ 100
-  @test all(l -> occursin(r"^\d+\. trace: parent \d+ \(visits \d+, #\d+ of \d+\) -> \d+ after \d+ swaps: (unchanged|new best|revisit|accepted|rejected) \(max \d+, window >= -?\d+\)$", l), lines)
+  # one "iteration. parent score (parent visits)" line per sample
+  @test length(out) == 20_000 ÷ 100
+  @test all(l -> occursin(r"^\d+\. \d+ \(\d+\)$", l), out)
   # off by default
   quiet = mktemp() do path, io
     Random.seed!(31)
@@ -483,5 +483,5 @@ end
     close(io)
     read(path, String)
   end
-  @test !occursin("trace:", quiet)
+  @test isempty(quiet)
 end

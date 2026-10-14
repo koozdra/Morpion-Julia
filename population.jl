@@ -882,9 +882,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     debug_interval::Int=100000,
     print_interval::Int=100000,
     verbose::Bool=true,
-    # trace > 0 prints that many sampled rollouts per debug_interval: the parent's
-    # score, its visits (picks since it last produced an accepted child), the
-    # child's score after the modification, and what happened to the child
+    # trace > 0 prints that many sampled rollouts per debug_interval, as
+    # "iteration. parent score (parent visits)"; visits are picks since the parent
+    # last produced an accepted child
     trace::Int=0,
     # hyper-parameters (defaults are the hand-tuned values; see tune.jl for the
     # search harness that explores them)
