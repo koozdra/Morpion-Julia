@@ -463,3 +463,25 @@ end
   @test !allunique(points_hash.(srcs[:lines]))
   @test_throws ArgumentError main(max_iterations=10, verbose=false, es_searched_key=:dots)
 end
+
+@testset "trace prints the requested number of rollouts per debug interval" begin
+  out = mktemp() do path, io
+    Random.seed!(31)
+    redirect_stdout(io) do
+      main(max_iterations=20_000, debug_interval=1000, verbose=false, initial_perms_size=10, trace=10)
+    end
+    close(io)
+    readlines(path)
+  end
+  lines = filter(l -> occursin("trace:", l), out)
+  @test length(lines) == 20_000 ÷ 100
+  @test all(l -> occursin(r"^\d+\. trace: parent \d+ \(visits \d+, #\d+ of \d+\) -> \d+ after \d+ swaps: (unchanged|new best|revisit|accepted|rejected) \(max \d+, window >= -?\d+\)$", l), lines)
+  # off by default
+  quiet = mktemp() do path, io
+    Random.seed!(31)
+    redirect_stdout(() -> main(max_iterations=2_000, debug_interval=1000, verbose=false, initial_perms_size=10), io)
+    close(io)
+    read(path, String)
+  end
+  @test !occursin("trace:", quiet)
+end

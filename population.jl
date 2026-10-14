@@ -10,6 +10,7 @@
 # 172 0yAij1VlSSRWkMM4M3Arjrd/2XLr5fl/x7zuu3Xu1/32//a+
 # 172 AENMhclbKcGxHhKhtGnBJdfX1DeJf7L6X+vt09fU7/Ptcv//va
 # 172 AYOOj1VtwCEKSlZSrUDYzo+pZb/2r99/y93O3rvPuv75//bv
+# 172 KBFEq2OtZY0C2sBilIKDRvc+rtm3/U9833lqfurm6b9/f/v7Tw
 # 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
 # 172 LoyBD5plSCpgxshpTUZV7x4z176/8O/mfz+XX57zt/3z/+r4
 # 172 UkiDTozaJmq4Mi4JQpJhYu3LPXzf7Tbzf1eV7+rOrb99//udfg
@@ -881,6 +882,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     debug_interval::Int=100000,
     print_interval::Int=100000,
     verbose::Bool=true,
+    # trace > 0 prints that many sampled rollouts per debug_interval: the parent's
+    # score, its visits (picks since it last produced an accepted child), the
+    # child's score after the modification, and what happened to the child
+    trace::Int=0,
     # hyper-parameters (defaults are the hand-tuned values; see tune.jl for the
     # search harness that explores them)
     # each child gets k swaps, k uniform in min_modifications:num_modifications
@@ -975,7 +980,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     window_adapt::Bool=true,
     window_adapt_target::Int=5_000,
     window_adapt_step::Int=1,
-    window_adapt_min::Int=1,
+    window_adapt_min::Int=0,
     window_adapt_max::Int=30,
     # end_search: once a call has found a completion beating its source, its
     # stall limit is multiplied by this (1 = no boost)
@@ -1106,6 +1111,12 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         stats !== nothing && stats.rows &&
             (stats_parent = (moves=copy(pmoves), visits=perm.visits, hash=perm.moves_hash))  # refresh may overwrite perm.moves
         perm.visits += 1
+        tracing = trace > 0 && iteration % max(1, debug_interval ÷ trace) == 0
+        if tracing
+            trace_visits = perm.visits
+            trace_max = candidate.max_score
+            trace_floor = candidate.max_score - candidate.back_accept
+        end
 
         stats === nothing || (eval_t0 = time_ns())
         window = iteration ÷ print_interval
@@ -1242,6 +1253,13 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             ))
             push!(candidate.archived, eval_moves_hash)
             stats === nothing || (stats.archived_rejects += 1)
+        end
+
+        if tracing
+            what = eval_moves_hash == perm.moves_hash ? "unchanged" :
+                   eval_score > trace_max ? "new best" :
+                   eval_score >= trace_floor ? (is_in_index ? "revisit" : "accepted") : "rejected"
+            println("$iteration. $perm_score ($trace_visits)")
         end
 
         if stats !== nothing && stats.rows && (stats_outcome != OUTCOME_REJECT || iteration % stats.reject_sample == 0)
