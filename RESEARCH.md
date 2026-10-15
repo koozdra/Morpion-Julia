@@ -765,6 +765,9 @@ Lines − points: −17.6 [−26.0, −9.6] at equal time, and −17.4 [−25.8,
 ### Full-DNA storage removed (2026-10-15)
 `dna_storage=:full` (each perm keeping its evolved 8,464-value dna) and the evaluation checkpoint cache that only worked with it (`checkpoint_interval`, `release_idle_caches`, `cache_min_picks`, `EvalCache` use in `main`) are gone; `dna_storage` is `:pack` (default) or `:moves`, and both rebuild the picked perm's dna from its game. That drops four fields from `Perm` (`perm`, `cache`, `window_picks`, `pick_window`): a packed perm went from ~211 to ~141 bytes (−33%), which matters with archives and pools of hundreds of thousands of perms in long runs. Search results are identical under `:pack` and `:moves` (checked against the previous commit). The `EvalCache` code stays in `morpion.jl`, unused by `main`.
 
+### Compact perms with inline packs; `:moves` storage removed (2026-10-15)
+Packed storage is now the only storage: `dna_storage` is gone. A `Perm` holds its hash, lines key, visits, decode-cache slot, score (`Int16`) and its pack inline (`NTuple{50,UInt8}`: the 2-byte bit count plus up to 48 bytes of bits, room for ~210 moves; a 178 takes 41 bytes; `inline_pack` refuses anything longer). `perm_moves(codec, p)` decodes a perm's game. On a 3M-iteration run: 88 bytes per perm including its slot in the pool or archive vector, against 132 before this change and ~219 before full-DNA storage was removed; at 10M archived perms that's ~0.9 GB instead of ~1.3 GB (plus the dedup set, ~16–24 bytes each). Search results are identical to the previous commit; iterations/s within ~1% (91.0k/90.7k vs 91.8k/91.5k).
+
 ## Background: the record and the literature
 
 Researched 2026-09-24.

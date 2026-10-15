@@ -424,7 +424,7 @@ function end_search_nrpa(moves::Array{Move,1}, back_accept;
     results
 end
 
-# DNA for a perm stored as moves only (main's dna_storage=:moves), written into
+# DNA for a perm, rebuilt from its game on every pick, written into
 # `dna`: a fixed random base permutation rotated by the perm's points hash (so
 # perms don't all share one ordering of their unplayed moves), with the played
 # moves given the highest values in game order, so the greedy rollout replays
@@ -441,7 +441,7 @@ function dna_from_moves!(dna::Vector{UInt16}, base::Vector{UInt16}, moves::Vecto
     dna
 end
 
-# Packed storage (main's dna_storage=:pack): a game is stored as the decisions
+# Packed storage (every pool perm): a game is stored as the decisions
 # of a canonical replay, the scheme generate_pack uses. Repeatedly take the
 # possible moves not yet rejected, sorted by (dot, line); for each, one bit says
 # whether the game plays it (it is played) or not (it is rejected for good).
@@ -526,7 +526,7 @@ function pack_encode(c::PackCodec, moves::Vector{Move})
 end
 
 # Decodes `pack` into `out` (cleared first) in canonical order.
-function pack_decode!(c::PackCodec, out::Vector{Move}, pack::Vector{UInt8})
+function pack_decode!(c::PackCodec, out::Vector{Move}, pack::Union{Vector{UInt8},NTuple{N,UInt8} where N})
     st = pack_reset!(c)
     empty!(out)
     nb = Int(pack[1]) | Int(pack[2]) << 8
@@ -552,29 +552,41 @@ end
 const LINE_ZOBRIST = rand(Random.Xoshiro(0x6c696e6573), UInt64, PACK_N)
 lines_hash(moves::Vector{Move}) = reduce(⊻, (LINE_ZOBRIST[dna_index(m)] for m in moves); init=UInt64(0))
 
-const EMPTY_MOVES = Move[]       # shared by every packed perm; never mutated
-const EMPTY_PACK = UInt8[]
+# A pool perm's game is stored inline as its pack (pack_encode: a 2-byte bit
+# count, then the bits), zero padded to PACK_BYTES. 48 bytes of bits is room for
+# ~210 moves at ~1.8 bits per move; a 178-move game takes 41 bytes in all.
+const PACK_BYTES = 50
+const InlinePack = NTuple{PACK_BYTES,UInt8}
 
+function inline_pack(v::Vector{UInt8})
+    length(v) <= PACK_BYTES ||
+        error("game too long for an inline pack ($(length(v)) > $PACK_BYTES bytes); raise PACK_BYTES")
+    ntuple(i -> i <= length(v) ? (@inbounds v[i]) : 0x00, Val(PACK_BYTES))
+end
+
+# One configuration in a pool or archive, ~80 bytes. The game itself is the
+# inline pack, decoded (in canonical order) when the perm is picked; its dna is
+# rebuilt from the decoded game (dna_from_moves!).
 mutable struct Perm
-    visits::Int
-    # the game in play order under dna_storage=:moves (EMPTY_MOVES under :pack);
-    # either way the dna is rebuilt from the game on every pick (dna_from_moves!)
-    moves::Vector{Move}
     moves_hash::UInt64
-    # game length, kept separately because packed perms have no moves vector
-    score::Int
-    # the packed game under dna_storage=:pack (EMPTY_PACK otherwise)
-    pack::Vector{UInt8}
-    # slot of its decoded moves in the DecodeCache (0 = not cached)
-    slot::Int
     # lines hash of the game currently stored (it changes when a child draws the
     # same dots with other lines); main's es_searched_key=:lines keys on it
     lines_key::UInt64
+    # picks since the perm last produced an accepted child
+    visits::Int
+    # slot of its decoded moves in the DecodeCache (0 = not cached)
+    slot::Int32
+    score::Int16
+    pack::InlinePack
 end
 
-Perm(visits, moves, moves_hash) = Perm(visits, moves, moves_hash, length(moves), EMPTY_PACK, 0, lines_hash(moves))
+Perm(codec::PackCodec, moves::Vector{Move}, moves_hash::UInt64) =
+    Perm(moves_hash, lines_hash(moves), 0, 0, length(moves), inline_pack(pack_encode(codec, moves)))
 
-# Decoded moves of recently picked packed perms (dna_storage=:pack), in a fixed
+# the perm's game, decoded into a new vector (canonical order)
+perm_moves(codec::PackCodec, p::Perm) = pack_decode!(codec, Move[], p.pack)
+
+# Decoded moves of recently picked perms, in a fixed
 # number of reusable slots with CLOCK replacement (an approximation of LRU: a
 # hit marks its slot recently used; a miss advances the hand past recently used
 # slots, clearing their marks, and evicts the first one that isn't).
@@ -766,7 +778,7 @@ mutable struct SearchStats
     # source game of each end_search call (same order), when keep_es_sources
     es_sources::Vector{Vector{Move}}
     keep_es_sources::Bool
-    # decode cache counters under dna_storage=:pack
+    # decode cache counters
     pack_cache_hits::Int
     pack_cache_misses::Int
     # idle resets (window widenings) and archived perms put back at them
@@ -902,13 +914,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     es_mode::Symbol=:ucb_then_mast,
     es_ucb_stall_rollouts::Int=2000,
     initial_perms_size::Int=100,
-    # :pack keeps only a packed set of lines per perm (~1.8 bits per move, see
-    # PackCodec), decoded in canonical order when the perm is picked, so its
-    # move order is lost; :moves keeps each perm's moves in the order played;
-    # both rebuild a dna from the moves on every pick (see dna_from_moves!)
-    dna_storage::Symbol=:pack,
-    # under :pack, how many recently picked perms keep their decoded moves
-    # (~0.8 KB each); 0 decodes on every pick
+    # how many recently picked perms keep their decoded moves (~0.8 KB each);
+    # 0 decodes on every pick. Perms keep only a packed set of lines (see
+    # PackCodec), decoded in canonical order, so a game's move order is lost
     pack_cache_size::Int=16384,
     # what makes two configurations the same: :points (the set of dots) or
     # :lines (the set of lines drawn). Keys the pool index, the end_searched
@@ -922,7 +930,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     new_best_first::Bool=false,
     # keep up to this many pruned perms per candidate and put them back when the
     # idle reset widens the window (0 = pruned perms are dropped)
-    archive_size::Int=600_000,
+    archive_size::Int=10_000_000,
     # es_mode = :nrpa settings: NRPA level, iterations per level, warm-start
     # adaptations towards the source, and seconds per end_search call
     es_nrpa_level::Int=2,
@@ -975,7 +983,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     es_searched_key::Symbol=:lines)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
-    dna_storage in (:moves, :pack) || throw(ArgumentError("dna_storage must be :moves or :pack, got $dna_storage"))
     es_searched_key in (:points, :lines) ||
         throw(ArgumentError("es_searched_key must be :points or :lines, got $es_searched_key"))
     es_when_all_searched in (:skip, :random, :best) ||
@@ -986,11 +993,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     sort_rotation in (:alternate, :score, :visits) || throw(ArgumentError("sort_rotation must be :alternate, :score or :visits, got $sort_rotation"))
     lines_key = config_key === :lines
     perm_length = 46 * 46 * 4
-    pack_mode = dna_storage === :pack
     codec = PackCodec()
-    pick_moves = Move[]   # the picked perm's decoded moves under :pack
-    packed_perm(moves, h) = Perm(0, EMPTY_MOVES, h, length(moves), pack_encode(codec, moves), 0, lines_hash(moves))
-    decode_cache = DecodeCache(pack_mode ? pack_cache_size : 0)
+    pick_moves = Move[]   # the picked perm's decoded moves (without the decode cache)
+    packed_perm(moves, h) = Perm(codec, moves, h)
+    decode_cache = DecodeCache(pack_cache_size)
     # pool perms store no dna; the picked perm's dna is rebuilt into dna_buf
     dna_base = shuffle(UInt16(1):UInt16(perm_length))
     dna_buf = zeros(UInt16, perm_length)
@@ -1016,13 +1022,13 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             lines_key && (perm_moves_hash = lines_hash(perm_moves))
             haskey(index, perm_moves_hash) && continue
 
-            new_perm = pack_mode ? packed_perm(perm_moves, perm_moves_hash) : Perm(0, perm_moves, perm_moves_hash)
+            new_perm = packed_perm(perm_moves, perm_moves_hash)
             push!(perms, new_perm)
             index[perm_moves_hash] = new_perm
         end
         sort!(perms, by=p -> -p.score)
         best = perms[1]
-        best_moves = pack_mode ? copy(pack_decode!(codec, Move[], best.pack)) : best.moves
+        best_moves = perm_moves(codec, best)
 
         push!(candidates,
             Candidate(
@@ -1066,12 +1072,11 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         # weighted
         perm_pos = floor(Int, rand()^selection_skew * length(candidate.perms)) + 1
         perm = candidate.perms[perm_pos]
-        pmoves = !pack_mode ? perm.moves :
-                 pack_cache_size > 0 ? cached_moves!(decode_cache, codec, perm) :
+        pmoves = pack_cache_size > 0 ? cached_moves!(decode_cache, codec, perm) :
                  pack_decode!(codec, pick_moves, perm.pack)
         perm_score = perm.score
         stats !== nothing && stats.rows &&
-            (stats_parent = (moves=copy(pmoves), visits=perm.visits, hash=perm.moves_hash))  # refresh may overwrite perm.moves
+            (stats_parent = (moves=copy(pmoves), visits=perm.visits, hash=perm.moves_hash))  # the cache slot may be reused
         perm.visits += 1
         tracing = trace > 0 && iteration % max(1, debug_interval ÷ trace) == 0
         if tracing
@@ -1102,7 +1107,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         is_in_index = haskey(candidate.index, eval_moves_hash)
 
         if eval_score > candidate.max_score
-            new_perm = pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(0, copy(eval_moves), eval_moves_hash)
+            new_perm = packed_perm(eval_moves, eval_moves_hash)
 
             # a new best goes to the front (picked most) or waits at the back for
             # the next score-order sort
@@ -1110,7 +1115,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             push!(candidates[candidate_position].perms, new_perm)
             candidates[candidate_position].cycle_yield += 1
             candidates[candidate_position].max_score = eval_score
-            candidates[candidate_position].max_moves = pack_mode ? copy(eval_moves) : new_perm.moves
+            candidates[candidate_position].max_moves = copy(eval_moves)
             candidates[candidate_position].index[eval_moves_hash] = new_perm
 
             verbose && println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
@@ -1122,7 +1127,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         elseif eval_score >= (candidate.max_score - candidate.back_accept)
 
             if !is_in_index
-                new_perm = pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(0, copy(eval_moves), eval_moves_hash)
+                new_perm = packed_perm(eval_moves, eval_moves_hash)
 
                 candidate.index[eval_moves_hash] = new_perm
                 push!(candidate.perms, new_perm)
@@ -1151,16 +1156,11 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 # refresh the stored perm in place (same board configuration, maybe
                 # other lines or another move order)
                 stored = candidate.index[eval_moves_hash]
-                if pack_mode
-                    # the pack only records the set of lines: re-pack only if the
-                    # child drew these dots with different lines
-                    if stored !== perm || lines_hash(eval_moves) != lines_hash(pmoves)
-                        stored.pack = pack_encode(codec, eval_moves)
-                        uncache!(decode_cache, stored)
-                    end
-                else
-                    resize!(stored.moves, length(eval_moves))
-                    copyto!(stored.moves, eval_moves)
+                # the pack only records the set of lines: re-pack only if the
+                # child drew these dots with different lines
+                if stored !== perm || lines_hash(eval_moves) != lines_hash(pmoves)
+                    stored.pack = inline_pack(pack_encode(codec, eval_moves))
+                    uncache!(decode_cache, stored)
                 end
                 stored.lines_key = lines_hash(eval_moves)
             end
@@ -1168,7 +1168,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         elseif archive_rejects && archive_size > 0 && eval_score >= candidate.max_score - candidate.window_start &&
             !is_in_index && !(eval_moves_hash in candidate.archived)
             # below the current window but inside the next reset's: keep it for then
-            push!(candidate.archive, pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(0, copy(eval_moves), eval_moves_hash))
+            push!(candidate.archive, packed_perm(eval_moves, eval_moves_hash))
             push!(candidate.archived, eval_moves_hash)
             stats === nothing || (stats.archived_rejects += 1)
         end
@@ -1210,7 +1210,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             end
 
             if !haskey(end_searched, es_key(best)) || es_when_all_searched !== :skip
-                es_source = pack_mode ? pack_decode!(codec, Move[], best.pack) : best.moves
+                es_source = perm_moves(codec, best)
 
                 results = if es_mode === :ucb
                     end_search_ucb(es_source, 5;
@@ -1243,7 +1243,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                     if es_score > end_search_candidate.max_score
                         end_search_candidate.visits = 0
-                        new_perm = pack_mode ? packed_perm(es_moves, es_moves_hash) : Perm(0, es_moves, es_moves_hash)
+                        new_perm = packed_perm(es_moves, es_moves_hash)
 
                         new_best_first ? pushfirst!(end_search_candidate.perms, new_perm) :
                         push!(end_search_candidate.perms, new_perm)
@@ -1259,7 +1259,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         es_best += 1
 
                     elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !is_in_index
-                        new_perm = pack_mode ? packed_perm(es_moves, es_moves_hash) : Perm(0, es_moves, es_moves_hash)
+                        new_perm = packed_perm(es_moves, es_moves_hash)
                         push!(end_search_candidate.perms, new_perm)
                         end_search_candidate.index[es_moves_hash] = new_perm
                         end_search_candidate.cycle_yield += 1

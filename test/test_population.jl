@@ -43,26 +43,27 @@ end
 
 @testset "prune_candidate! keeps index and perms consistent" begin
   Random.seed!(3)
+  codec = PackCodec()
   perms = Perm[]
   index = Dict{UInt64,Perm}()
   while length(perms) < 20
     moves = random_morpion()
     h = points_hash(moves)
     haskey(index, h) && continue
-    p = Perm(0, moves, h)
+    p = Perm(codec, moves, h)
     push!(perms, p)
     index[h] = p
   end
-  max_score, best_i = findmax(p -> length(p.moves), perms)
+  max_score, best_i = findmax(p -> Int(p.score), perms)
   c = Candidate(0, perms, index,
-    perms[best_i].moves, max_score, 3, 5.0, 50)
+    perm_moves(codec, perms[best_i]), max_score, 3, 5.0, 50)
 
   prune_candidate!(c)
 
   @test c.improvement_counter == 0
   @test c.idle_counter == 0
   @test c.back_accept == 2
-  @test all(length(p.moves) >= c.max_score - c.back_accept for p in c.perms)
+  @test all(p.score >= c.max_score - c.back_accept for p in c.perms)
   @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
   # the best perm always survives the prune
   @test any(p -> p.moves_hash == points_hash(c.max_moves), c.perms)
@@ -91,10 +92,10 @@ end
   @test length(Set(p.moves_hash for p in c.perms)) == length(c.perms)
 
   # every retained perm is a real, fully played game whose stored hash and
-  # score match (packed perms, the default, are decoded first)
+  # score match
   codec = PackCodec()
   for p in c.perms
-    moves = isempty(p.pack) ? p.moves : pack_decode!(codec, Move[], p.pack)
+    moves = perm_moves(codec, p)
     @test points_hash(moves) == p.moves_hash
     @test length(moves) == p.score
     @test (verify(Morpion(moves)); true)
@@ -119,20 +120,21 @@ end
   end
 end
 
-@testset "main() with moves-only dna storage" begin
+@testset "pool games decode to valid games that their rebuilt dna replays" begin
   Random.seed!(13)
   c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
-    verbose=false, initial_perms_size=10, dna_storage=:moves)[1]
+    verbose=false, initial_perms_size=10)[1]
   @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
-  @test maximum(length(p.moves) for p in c.perms) == c.max_score
+  codec = PackCodec()
+  @test maximum(length(perm_moves(codec, p)) for p in c.perms) == c.max_score
   base = shuffle(MersenneTwister(1), UInt16(1):UInt16(46 * 46 * 4))
   dna = zeros(UInt16, length(base))
   for p in c.perms[1:min(end, 50)]
-    @test points_hash(p.moves) == p.moves_hash
-    @test (verify(Morpion(p.moves)); true)
-    @test eval_dna_and_hash(dna_from_moves!(dna, base, p.moves, p.moves_hash))[1] == p.moves
+    m = perm_moves(codec, p)
+    @test points_hash(m) == p.moves_hash
+    @test (verify(Morpion(m)); true)
+    @test eval_dna_and_hash(dna_from_moves!(dna, base, m, p.moves_hash))[1] == m
   end
-  @test_throws ArgumentError main(max_iterations=10, verbose=false, dna_storage=:bogus)
 end
 
 @testset "SearchStats(rows=false) keeps only the summaries and doesn't change the search" begin
@@ -175,8 +177,7 @@ end
 @testset "main() with packed storage keeps a consistent pool" begin
   Random.seed!(15)
   c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
-    verbose=false, initial_perms_size=10, dna_storage=:pack)[1]
-  @test isempty(EMPTY_MOVES)                     # the shared empty vector is never written to
+    verbose=false, initial_perms_size=10)[1]
   @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
   codec = PackCodec()
   out = Move[]
@@ -194,7 +195,7 @@ end
   rng = MersenneTwister(41)
   perms = map(1:10) do _
     g = random_game(rng)[2]
-    Perm(0, EMPTY_MOVES, points_hash(g), length(g), pack_encode(codec, g), 0, lines_hash(g))
+    Perm(codec, g, points_hash(g))
   end
   out = Move[]
   for _ in 1:200
@@ -214,7 +215,7 @@ end
   runs = map((0, 64, 16384)) do n
     Random.seed!(16)
     c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
-      verbose=false, initial_perms_size=10, dna_storage=:pack, pack_cache_size=n)[1]
+      verbose=false, initial_perms_size=10, pack_cache_size=n)[1]
     (c.max_moves, [p.moves_hash for p in c.perms], [p.pack for p in c.perms])
   end
   @test runs[2] == runs[1]
@@ -235,17 +236,15 @@ end
 end
 
 @testset "main() with config_key=:lines keys every perm by its lines" begin
-  for storage in (:pack, :moves)
-    Random.seed!(18)
-    c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
-      verbose=false, initial_perms_size=10, dna_storage=storage, config_key=:lines)[1]
-    @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
-    codec = PackCodec()
-    for p in c.perms
-      m = storage === :pack ? pack_decode!(codec, Move[], p.pack) : p.moves
-      @test lines_hash(m) == p.moves_hash
-      @test length(m) == p.score
-    end
+  Random.seed!(18)
+  c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
+    verbose=false, initial_perms_size=10, config_key=:lines)[1]
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  codec = PackCodec()
+  for p in c.perms
+    m = perm_moves(codec, p)
+    @test lines_hash(m) == p.moves_hash
+    @test length(m) == p.score
   end
   @test_throws ArgumentError main(max_iterations=10, verbose=false, config_key=:bogus)
 end
@@ -253,14 +252,15 @@ end
 @testset "pruned perms are archived (best first, capped) and reintroduced when the window widens" begin
   rng = MersenneTwister(51)
   perms = Perm[]; index = Dict{UInt64,Perm}()
+  codec = PackCodec()
   while length(perms) < 40
     g = random_game(rng)[2]
     h = points_hash(g)
     haskey(index, h) && continue
-    p = Perm(0, g, h); push!(perms, p); index[h] = p
+    p = Perm(codec, g, h); push!(perms, p); index[h] = p
   end
-  max_score = maximum(p.score for p in perms)
-  c = Candidate(0, perms, index, perms[1].moves, max_score, 6, 0.0, 0)
+  max_score = Int(maximum(p.score for p in perms))
+  c = Candidate(0, perms, index, perm_moves(codec, perms[1]), max_score, 6, 0.0, 0)
   before = Set(p.moves_hash for p in perms)
 
   prune_candidate!(c; archive_size=10)           # window shrinks to > max - 5
@@ -283,7 +283,7 @@ end
   @test issorted(first.(back), rev=true)
 
   # pruning without an archive keeps nothing
-  c2 = Candidate(0, copy(perms), copy(index), perms[1].moves, max_score, 6, 0.0, 0)
+  c2 = Candidate(0, copy(perms), copy(index), perm_moves(codec, perms[1]), max_score, 6, 0.0, 0)
   prune_candidate!(c2)
   @test isempty(c2.archive)
 end
@@ -411,13 +411,10 @@ end
 end
 
 @testset "lines_key follows the lines each perm stores" begin
-  for storage in (:moves, :pack)
-    Random.seed!(29)
-    cs = main(max_iterations=30_000, verbose=false, initial_perms_size=10, dna_storage=storage)
-    codec = PackCodec()
-    stored(p) = storage === :pack ? pack_decode!(codec, Move[], p.pack) : p.moves
-    @test all(c -> all(p -> p.lines_key == lines_hash(stored(p)), c.perms), cs)
-  end
+  Random.seed!(29)
+  cs = main(max_iterations=30_000, verbose=false, initial_perms_size=10)
+  codec = PackCodec()
+  @test all(c -> all(p -> p.lines_key == lines_hash(perm_moves(codec, p)), c.perms), cs)
 end
 
 @testset "es_searched_key=:lines searches an island again once its lines change" begin
@@ -457,4 +454,15 @@ end
     read(path, String)
   end
   @test isempty(quiet)
+end
+
+@testset "inline packs hold long games and refuse oversized ones" begin
+  codec = PackCodec()
+  for (_, pack) in GOLDEN_PACKS
+    g = unpack_pack(pack).moves
+    p = Perm(codec, g, points_hash(g))
+    @test perm_moves(codec, p) == pack_decode!(codec, Move[], pack_encode(codec, g))
+    @test p.score == length(g)
+  end
+  @test_throws ErrorException inline_pack(zeros(UInt8, PACK_BYTES + 1))
 end
