@@ -978,7 +978,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # window_adapt_max), otherwise narrow it (down to window_adapt_min);
     # window_start is the starting value
     window_adapt::Bool=true,
-    window_adapt_target::Int=5_000,
+    window_adapt_target::Int=50_000,
     window_adapt_step::Int=1,
     window_adapt_min::Int=0,
     window_adapt_max::Int=30,
