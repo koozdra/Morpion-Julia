@@ -63,7 +63,6 @@ Defaults as of 2026-10-13:
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
 | `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
 | `archive_size`, `archive_rejects` | 300,000, true | pruned perms are archived and put back when the window widens again: at each timer reset (or idle reset under `:counters`); since 2026-10-06. Since 2026-10-12 children below the current window but inside the next reset's are archived too, and the archive holds 300k (was 100k) |
-| `checkpoint_interval`, `release_idle_caches`, `cache_min_picks` | 4, true, 8 | only apply to `dna_storage=:full` |
 
 ## Selection and search dynamics
 
@@ -630,7 +629,7 @@ A neighbour shares most of the source's moves, so its own window covers mostly t
 
 ## Performance
 
-### Evaluation checkpointing (2026-09-28): **Adopted**, then mostly superseded
+### Evaluation checkpointing (2026-09-28): **Adopted**, then superseded (removed with full-DNA storage on 2026-10-15)
 A child's game copies its parent's until a changed DNA value wins a selection it lost before. Each perm caches its game's first-legal steps, play steps, chosen values, and a position every K moves. A child resumes from the last checkpoint before its restart step (`EvalCache`, `restart_step`, `rollout_heal!` in `morpion.jl`).
 
 - **Result:** 1.078× wall clock with bit-identical results, under late-September defaults. The restart bound is near the true divergence (25% vs 27% of weighted work), so the ceiling is the mutation itself: with 2–10 swaps, the earliest lands around move 15 of ~125.
@@ -762,6 +761,9 @@ A/B at 10 min × 12 paired seeds, 2026-10-04 defaults (packed storage):
 | lines | 157 158 151 146 140 129 134 111 139 147 124 117 | 137.8 (139.5) | 42k / 114k | 9.2 | 11.4% | 44.5M |
 
 Lines − points: −17.6 [−26.0, −9.6] at equal time, and −17.4 [−25.8, −9.4] at equal iterations, worse on 11 of 12 seeds. Line variants flood the pool (60× more perms), which spreads selection over lateral copies of the same dot sets. end_search also spends nearly twice the time and raises the max half as often. Merging by dots works as useful dedup; keep `:points`. A longer `:lines` run (2026-10-05) confirmed that the index keeps growing.
+
+### Full-DNA storage removed (2026-10-15)
+`dna_storage=:full` (each perm keeping its evolved 8,464-value dna) and the evaluation checkpoint cache that only worked with it (`checkpoint_interval`, `release_idle_caches`, `cache_min_picks`, `EvalCache` use in `main`) are gone; `dna_storage` is `:pack` (default) or `:moves`, and both rebuild the picked perm's dna from its game. That drops four fields from `Perm` (`perm`, `cache`, `window_picks`, `pick_window`): a packed perm went from ~211 to ~141 bytes (−33%), which matters with archives and pools of hundreds of thousands of perms in long runs. Search results are identical under `:pack` and `:moves` (checked against the previous commit). The `EvalCache` code stays in `morpion.jl`, unused by `main`.
 
 ## Background: the record and the literature
 

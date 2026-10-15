@@ -557,17 +557,10 @@ const EMPTY_PACK = UInt8[]
 
 mutable struct Perm
     visits::Int
-    perm::Vector{UInt16}
-    # TODO: remove moves, not using it for anything
+    # the game in play order under dna_storage=:moves (EMPTY_MOVES under :pack);
+    # either way the dna is rebuilt from the game on every pick (dna_from_moves!)
     moves::Vector{Move}
     moves_hash::UInt64
-    # checkpoints of the game `perm` plays, built once the perm has been picked
-    # cache_min_picks times in the current print interval; `valid` is cleared
-    # whenever `perm` changes to a dna whose game differs
-    cache::Union{Nothing,EvalCache}
-    # picks in the current print interval (`pick_window` = iteration ÷ print_interval)
-    window_picks::Int
-    pick_window::Int
     # game length, kept separately because packed perms have no moves vector
     score::Int
     # the packed game under dna_storage=:pack (EMPTY_PACK otherwise)
@@ -579,8 +572,7 @@ mutable struct Perm
     lines_key::UInt64
 end
 
-Perm(visits, perm, moves, moves_hash) =
-    Perm(visits, perm, moves, moves_hash, nothing, 0, -1, length(moves), EMPTY_PACK, 0, lines_hash(moves))
+Perm(visits, moves, moves_hash) = Perm(visits, moves, moves_hash, length(moves), EMPTY_PACK, 0, lines_hash(moves))
 
 # Decoded moves of recently picked packed perms (dna_storage=:pack), in a fixed
 # number of reusable slots with CLOCK replacement (an approximation of LRU: a
@@ -674,7 +666,6 @@ function prune_below!(c::Candidate; archive_size::Int=0)
         if perm.score < c.max_score - c.back_accept
             delete!(c.index, perm.moves_hash)
             if archive_size > 0 && !(perm.moves_hash in c.archived)
-                perm.cache = nothing   # a checkpoint cache is ~94 KB; rebuilt if it returns
                 push!(c.archive, perm)
                 push!(c.archived, perm.moves_hash)
             end
@@ -766,10 +757,8 @@ mutable struct SearchStats
     diverge::Vector{Int16}       # first step the child game differs (0 = identical)
     eval_score::Vector{Int16}
     outcome::Vector{Int8}
-    # section timings (ns); eval_ns includes checkpoint cache builds
+    # section timings (ns)
     eval_ns::Int
-    cache_builds::Int
-    cache_retargets::Int
     end_search_ns::Int
     maintenance_ns::Int
     # end_search: (iteration, source score, max_score, results, best result, accepted, new best)
@@ -807,7 +796,7 @@ end
 
 SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
     Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
-    0, 0, 0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+    0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
     reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
@@ -913,23 +902,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     es_mode::Symbol=:ucb_then_mast,
     es_ucb_stall_rollouts::Int=2000,
     initial_perms_size::Int=100,
-    # rollouts resume from a checkpoint of the parent's game every this many
-    # moves (0 = always replay from the start; results are identical either way)
-    checkpoint_interval::Int=4,
-    # every print_interval iterations, drop the checkpoint caches of perms that
-    # weren't picked as a parent since the last cleanup (~94 KB each); a perm
-    # picked again rebuilds its cache, so results are unchanged
-    release_idle_caches::Bool=true,
-    # a perm only gets a checkpoint cache from its cache_min_picks-th pick within
-    # a print interval on; a cache costs ~1.4 rollouts to build and saves ~18%
-    # of each later rollout, so caching rarely picked perms wastes time and memory
-    cache_min_picks::Int=8,
     # :pack keeps only a packed set of lines per perm (~1.8 bits per move, see
     # PackCodec), decoded in canonical order when the perm is picked, so its
     # move order is lost; :moves keeps each perm's moves in the order played;
-    # both rebuild a dna from the moves on every pick (see dna_from_moves!).
-    # :full keeps every perm's evolved dna (16.6 KB each). checkpoint_interval,
-    # release_idle_caches and cache_min_picks only apply to :full
+    # both rebuild a dna from the moves on every pick (see dna_from_moves!)
     dna_storage::Symbol=:pack,
     # under :pack, how many recently picked perms keep their decoded moves
     # (~0.8 KB each); 0 decodes on every pick
@@ -999,7 +975,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     es_searched_key::Symbol=:lines)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
-    dna_storage in (:full, :moves, :pack) || throw(ArgumentError("dna_storage must be :full, :moves or :pack, got $dna_storage"))
+    dna_storage in (:moves, :pack) || throw(ArgumentError("dna_storage must be :moves or :pack, got $dna_storage"))
     es_searched_key in (:points, :lines) ||
         throw(ArgumentError("es_searched_key must be :points or :lines, got $es_searched_key"))
     es_when_all_searched in (:skip, :random, :best) ||
@@ -1010,18 +986,14 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     sort_rotation in (:alternate, :score, :visits) || throw(ArgumentError("sort_rotation must be :alternate, :score or :visits, got $sort_rotation"))
     lines_key = config_key === :lines
     perm_length = 46 * 46 * 4
-    moves_only = dna_storage !== :full
     pack_mode = dna_storage === :pack
     codec = PackCodec()
     pick_moves = Move[]   # the picked perm's decoded moves under :pack
-    packed_perm(moves, h) = Perm(0, UInt16[], EMPTY_MOVES, h, nothing, 0, -1, length(moves), pack_encode(codec, moves), 0,
-        lines_hash(moves))
+    packed_perm(moves, h) = Perm(0, EMPTY_MOVES, h, length(moves), pack_encode(codec, moves), 0, lines_hash(moves))
     decode_cache = DecodeCache(pack_mode ? pack_cache_size : 0)
-    # with moves_only, pool perms store no dna; the picked perm's dna is rebuilt
-    # into dna_buf
-    dna_base = moves_only ? shuffle(UInt16(1):UInt16(perm_length)) : UInt16[]
-    dna_buf = zeros(UInt16, moves_only ? perm_length : 0)
-    stored_dna(dna) = moves_only ? UInt16[] : copy(dna)
+    # pool perms store no dna; the picked perm's dna is rebuilt into dna_buf
+    dna_base = shuffle(UInt16(1):UInt16(perm_length))
+    dna_buf = zeros(UInt16, perm_length)
 
     candidates = Candidate[]
 
@@ -1044,12 +1016,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             lines_key && (perm_moves_hash = lines_hash(perm_moves))
             haskey(index, perm_moves_hash) && continue
 
-            new_perm = pack_mode ? packed_perm(perm_moves, perm_moves_hash) : Perm(
-                0,
-                moves_only ? UInt16[] : perm,
-                perm_moves,
-                perm_moves_hash
-            )
+            new_perm = pack_mode ? packed_perm(perm_moves, perm_moves_hash) : Perm(0, perm_moves, perm_moves_hash)
             push!(perms, new_perm)
             index[perm_moves_hash] = new_perm
         end
@@ -1082,12 +1049,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     eval_made = Move[]
     eval_values = UInt16[]
     modifications = Tuple{Int,Int}[]
-    restart_idx = Int[]
-    restart_newv = UInt16[]
-    restart = 0
-    # released caches, reused before allocating new ones
-    spare_caches = EvalCache[]
-    max_spare_caches = 64
 
     iteration = 1
     start_time = time()
@@ -1120,42 +1081,15 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         end
 
         stats === nothing || (eval_t0 = time_ns())
-        window = iteration ÷ print_interval
-        if perm.pick_window != window
-            perm.pick_window = window
-            perm.window_picks = 0
-        end
-        perm.window_picks += 1
-        use_cache = checkpoint_interval > 0 && !moves_only &&
-            (perm.cache !== nothing || perm.window_picks >= cache_min_picks)
-        dna = moves_only ? dna_from_moves!(dna_buf, dna_base, pmoves, perm.moves_hash) : perm.perm
-
-        if use_cache
-            if perm.cache === nothing
-                perm.cache = isempty(spare_caches) ? EvalCache(checkpoint_interval) : pop!(spare_caches)
-            end
-            perm.cache.last_used = iteration
-            if !perm.cache.valid
-                build_eval_cache!(perm.cache, perm.perm, eval_board, eval_possible, eval_made, eval_values)
-                stats === nothing || (stats.cache_builds += 1)
-            end
-        end
+        dna = dna_from_moves!(dna_buf, dna_base, pmoves, perm.moves_hash)
 
         empty!(modifications)
         for _ in 1:rand(min_modifications:num_modifications)
             push!(modifications, (dna_index(selectByR(pmoves, rand()^move_selection_skew)), rand(1:perm_length)))
         end
 
-        use_cache &&
-            (restart = restart_step(perm.cache, dna, modifications, restart_idx, restart_newv))
         apply_swaps!(dna, modifications)
-
-        if use_cache
-            eval_moves, eval_moves_hash = eval_dna_and_hash_cached!(dna, perm.cache, restart,
-                eval_board, eval_possible, eval_made, eval_values)
-        else
-            eval_moves, eval_moves_hash = eval_dna_and_hash!(dna, eval_board, eval_possible, eval_made, eval_values)
-        end
+        eval_moves, eval_moves_hash = eval_dna_and_hash!(dna, eval_board, eval_possible, eval_made, eval_values)
         lines_key && (eval_moves_hash = lines_hash(eval_moves))
         eval_score = length(eval_moves)
         if stats !== nothing
@@ -1168,12 +1102,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         is_in_index = haskey(candidate.index, eval_moves_hash)
 
         if eval_score > candidate.max_score
-            new_perm = pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(
-                0,
-                stored_dna(dna),
-                copy(eval_moves),
-                eval_moves_hash
-            )
+            new_perm = pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(0, copy(eval_moves), eval_moves_hash)
 
             # a new best goes to the front (picked most) or waits at the back for
             # the next score-order sort
@@ -1193,12 +1122,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         elseif eval_score >= (candidate.max_score - candidate.back_accept)
 
             if !is_in_index
-                new_perm = pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(
-                    0,
-                    stored_dna(dna),
-                    copy(eval_moves),
-                    eval_moves_hash
-                )
+                new_perm = pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(0, copy(eval_moves), eval_moves_hash)
 
                 candidate.index[eval_moves_hash] = new_perm
                 push!(candidate.perms, new_perm)
@@ -1224,11 +1148,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 end
             else
                 stats === nothing || (stats_outcome = OUTCOME_REVISIT)
-                # refresh the stored perm in place (same board configuration, new dna)
+                # refresh the stored perm in place (same board configuration, maybe
+                # other lines or another move order)
                 stored = candidate.index[eval_moves_hash]
-                # the parent's own cache is checked below, where its dna is kept
-                stored !== perm && stored.cache !== nothing && (stored.cache.valid = false)
-                moves_only || copyto!(stored.perm, dna)
                 if pack_mode
                     # the pack only records the set of lines: re-pack only if the
                     # child drew these dots with different lines
@@ -1246,12 +1168,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         elseif archive_rejects && archive_size > 0 && eval_score >= candidate.max_score - candidate.window_start &&
             !is_in_index && !(eval_moves_hash in candidate.archived)
             # below the current window but inside the next reset's: keep it for then
-            push!(candidate.archive, pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(
-                0,
-                stored_dna(dna),
-                copy(eval_moves),
-                eval_moves_hash
-            ))
+            push!(candidate.archive, pack_mode ? packed_perm(eval_moves, eval_moves_hash) : Perm(0, copy(eval_moves), eval_moves_hash))
             push!(candidate.archived, eval_moves_hash)
             stats === nothing || (stats.archived_rejects += 1)
         end
@@ -1266,19 +1183,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         if stats !== nothing && stats.rows && (stats_outcome != OUTCOME_REJECT || iteration % stats.reject_sample == 0)
             record_rollout!(stats, start_time, iteration, stats_parent, perm_pos, candidate,
                 stats_max_score, stats_back_accept, modifications, eval_moves, stats_outcome)
-        end
-
-        if eval_moves_hash != perm.moves_hash
-            moves_only || revert_swaps!(dna, modifications)
-        elseif perm.cache !== nothing && perm.cache.valid
-            # the parent keeps the child dna: its game is the child's, which may play
-            # the same points in a different order
-            if eval_moves != perm.cache.moves
-                retarget_eval_cache!(perm.cache, perm.perm, eval_moves, eval_moves_hash)
-                stats === nothing || (stats.cache_retargets += 1)
-            else
-                refresh_eval_cache_values!(perm.cache, perm.perm)
-            end
         end
 
 
@@ -1339,12 +1243,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                     if es_score > end_search_candidate.max_score
                         end_search_candidate.visits = 0
-                        new_perm = pack_mode ? packed_perm(es_moves, es_moves_hash) : Perm(
-                            0,
-                            moves_only ? UInt16[] : generate_dna_all(es_moves),
-                            es_moves,
-                            es_moves_hash
-                        )
+                        new_perm = pack_mode ? packed_perm(es_moves, es_moves_hash) : Perm(0, es_moves, es_moves_hash)
 
                         new_best_first ? pushfirst!(end_search_candidate.perms, new_perm) :
                         push!(end_search_candidate.perms, new_perm)
@@ -1360,12 +1259,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         es_best += 1
 
                     elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !is_in_index
-                        new_perm = pack_mode ? packed_perm(es_moves, es_moves_hash) : Perm(
-                            0,
-                            moves_only ? UInt16[] : generate_dna_all(es_moves),
-                            es_moves,
-                            es_moves_hash
-                        )
+                        new_perm = pack_mode ? packed_perm(es_moves, es_moves_hash) : Perm(0, es_moves, es_moves_hash)
                         push!(end_search_candidate.perms, new_perm)
                         end_search_candidate.index[es_moves_hash] = new_perm
                         end_search_candidate.cycle_yield += 1
@@ -1396,7 +1290,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         if iteration % debug_interval == 0
             stats === nothing || (maint_t0 = time_ns())
             should_print = verbose && iteration % print_interval == 0
-            release_caches = release_idle_caches && checkpoint_interval > 0 && iteration % print_interval == 0
             current_time = time()
             elapsed = current_time - last_debug_time
 
@@ -1428,23 +1321,6 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     end
                 elseif c.improvement_counter >= improvement_step_up
                     prune_candidate!(c; archive_size=archive_size)
-                end
-
-                if release_caches
-                    released = 0
-                    cached = 0
-                    for p in c.perms
-                        p.cache === nothing && continue
-                        if p.cache.last_used <= iteration - print_interval
-                            p.cache.valid = false
-                            length(spare_caches) < max_spare_caches && push!(spare_caches, p.cache)
-                            p.cache = nothing
-                            released += 1
-                        else
-                            cached += 1
-                        end
-                    end
-                    should_print && released > 0 && println("$iteration. released $released idle checkpoint caches, $cached still cached, pool $(length(c.perms))")
                 end
 
                 if should_print

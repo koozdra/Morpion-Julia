@@ -49,7 +49,7 @@ end
     moves = random_morpion()
     h = points_hash(moves)
     haskey(index, h) && continue
-    p = Perm(0, generate_dna_all(moves), moves, h)
+    p = Perm(0, moves, h)
     push!(perms, p)
     index[h] = p
   end
@@ -102,33 +102,6 @@ end
   @test maximum(p.score for p in c.perms) == c.max_score
 end
 
-@testset "checkpointed main() reproduces the uncheckpointed search exactly" begin
-  runs = map((0, 8, 3)) do interval
-    Random.seed!(11)
-    c = main(max_iterations=20_000, end_search_interval=3000, debug_interval=1000,
-      verbose=false, initial_perms_size=10, checkpoint_interval=interval, dna_storage=:full)[1]
-    (c.max_score, c.max_moves, [p.moves_hash for p in c.perms], [p.perm for p in c.perms])
-  end
-  @test runs[2] == runs[1]
-  @test runs[3] == runs[1]
-end
-
-@testset "releasing idle checkpoint caches doesn't change the search" begin
-  runs = map((false, true)) do release
-    Random.seed!(12)
-    cs = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
-      print_interval=1000, verbose=false, initial_perms_size=10, release_idle_caches=release,
-      dna_storage=:full)
-    c = cs[1]
-    cached = count(p -> p.cache !== nothing, c.perms)
-    (sig=(c.max_score, c.max_moves, [p.moves_hash for p in c.perms], [p.perm for p in c.perms]),
-      cached=cached, pool=length(c.perms))
-  end
-  @test runs[2].sig == runs[1].sig
-  # without release every perm that was ever a parent keeps its cache
-  @test runs[2].cached < runs[1].cached
-end
-
 @testset "dna_from_moves! rebuilds a dna that replays the game" begin
   rng = MersenneTwister(21)
   N = 46 * 46 * 4
@@ -150,7 +123,6 @@ end
   Random.seed!(13)
   c = main(max_iterations=30_000, end_search_interval=3000, debug_interval=1000,
     verbose=false, initial_perms_size=10, dna_storage=:moves)[1]
-  @test all(p -> isempty(p.perm) && p.cache === nothing, c.perms)
   @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
   @test maximum(length(p.moves) for p in c.perms) == c.max_score
   base = shuffle(MersenneTwister(1), UInt16(1):UInt16(46 * 46 * 4))
@@ -222,7 +194,7 @@ end
   rng = MersenneTwister(41)
   perms = map(1:10) do _
     g = random_game(rng)[2]
-    Perm(0, UInt16[], EMPTY_MOVES, points_hash(g), nothing, 0, -1, length(g), pack_encode(codec, g), 0, lines_hash(g))
+    Perm(0, EMPTY_MOVES, points_hash(g), length(g), pack_encode(codec, g), 0, lines_hash(g))
   end
   out = Move[]
   for _ in 1:200
@@ -285,7 +257,7 @@ end
     g = random_game(rng)[2]
     h = points_hash(g)
     haskey(index, h) && continue
-    p = Perm(0, UInt16[], g, h); push!(perms, p); index[h] = p
+    p = Perm(0, g, h); push!(perms, p); index[h] = p
   end
   max_score = maximum(p.score for p in perms)
   c = Candidate(0, perms, index, perms[1].moves, max_score, 6, 0.0, 0)
@@ -330,7 +302,8 @@ end
   for N in (13_000, 22_000)          # last maintenance mid-cycle
     Random.seed!(21)
     c = main(max_iterations=N, end_search_interval=3000, debug_interval=1000, verbose=false,
-      initial_perms_size=10, window_schedule=:timer, window_cycle=8, window_start=20, window_adapt=false)[1]
+      initial_perms_size=10, window_schedule=:timer, window_cycle=8, window_start=20, window_adapt=false,
+      window_shape=1)[1]
     k = (N ÷ 1000) % 8
     expected = k == 0 ? 20 : round(Int, 20 * (1 - k / 8))
     @test c.back_accept == expected
@@ -361,7 +334,7 @@ end
   N = 13_000
   Random.seed!(24)
   c = main(max_iterations=N, end_search_interval=3000, debug_interval=1000, verbose=false,
-    initial_perms_size=10, window_cycle=16, window_start=20, window_dwell=1)[1]
+    initial_perms_size=10, window_cycle=16, window_start=20, window_dwell=1, window_shape=1)[1]
   @test c.back_accept == round(Int, 20 * (1 - floor(Int, 16 * sqrt(13 / 16)) / 16))
 end
 
