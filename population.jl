@@ -35,6 +35,7 @@
 # 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
 # 177 IiAjf2jokjJLE4Zwyk4vWzYlXn77f1lf/be7tN7f/p5fv/t7X
 # 177 IiAjf2jokjJLE6eTC+plL+j5/o7/HO3qTxvV89vK9fvY+v+/3o
+# 177 IiAjf2jwkjJLE4ZwykwtXXP7+ur2prZ9ysuur49vK9fvaef+/3w
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 # 178 7EBET5ZlRiSHYc0gSqEaxn9OfXDfr79Vak78WKOe7yv//Wm//9v0
 # 178 CBMXT2TomgiXeiKNAlJFlP65fcOv199WaUv2yjHO7Zv/7uW//370
@@ -945,7 +946,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     new_best_first::Bool=false,
     # keep up to this many pruned perms per candidate and put them back when the
     # idle reset widens the window (0 = pruned perms are dropped)
-    archive_size::Int=300_000,
+    archive_size::Int=600_000,
     # es_mode = :nrpa settings: NRPA level, iterations per level, warm-start
     # adaptations towards the source, and seconds per end_search call
     es_nrpa_level::Int=2,
@@ -967,7 +968,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     window_start::Int=5,
     # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
     # 1 narrows linearly, > 1 narrows fast and spends longer near the max
-    window_shape::Real=1,
+    window_shape::Real=1.5,
     # how the timer's steps are paced: 0 = every step lasts one maintenance
     # interval; d > 0 = step k lasts in proportion to k^d (the cycle still takes
     # window_cycle intervals), so more time is spent near the max
