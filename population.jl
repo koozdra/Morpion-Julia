@@ -586,6 +586,69 @@ Perm(codec::PackCodec, moves::Vector{Move}, moves_hash::UInt64) =
 # the perm's game, decoded into a new vector (canonical order)
 perm_moves(codec::PackCodec, p::Perm) = pack_decode!(codec, Move[], p.pack)
 
+# A configuration waiting for end_search: a snapshot of a game as a modification
+# produced it. The pool keeps only each island's latest lines, which may drift
+# again before the next end_search slot, so the snapshot keeps this version.
+struct QueuedGame
+    key::UInt64       # its end_searched key (lines or points, see es_searched_key)
+    score::Int16
+    pack::InlinePack
+end
+
+const ES_QUEUE_SCORES = 512   # bucket s+1 holds score s
+
+# A candidate's end_search queue: snapshots bucketed by score, newest first
+# within a score, no key twice; over capacity it drops from the lowest score.
+mutable struct ESQueue
+    buckets::Vector{Vector{QueuedGame}}
+    keys::Set{UInt64}
+    n::Int
+end
+
+ESQueue() = ESQueue([QueuedGame[] for _ in 1:ES_QUEUE_SCORES], Set{UInt64}(), 0)
+
+function es_enqueue!(q::ESQueue, key::UInt64, score::Integer, pack::InlinePack, cap::Int)
+    (cap <= 0 || key in q.keys) && return false
+    push!(q.buckets[score+1], QueuedGame(key, score, pack))
+    push!(q.keys, key)
+    q.n += 1
+    while q.n > cap
+        for b in q.buckets
+            if !isempty(b)
+                delete!(q.keys, pop!(b).key)
+                q.n -= 1
+                break
+            end
+        end
+    end
+    true
+end
+
+# The highest scoring queued game at or above `floor` whose key isn't in
+# `searched`, left in the queue (es_pop! takes it); entries searched meanwhile
+# are dropped on the way. Entries below the floor wait for a wider window.
+function es_peek!(q::ESQueue, floor::Integer, searched::AbstractDict)
+    for s in ES_QUEUE_SCORES:-1:max(1, floor + 1)
+        b = q.buckets[s]
+        while !isempty(b)
+            g = b[end]
+            haskey(searched, g.key) || return g
+            pop!(b)
+            delete!(q.keys, g.key)
+            q.n -= 1
+        end
+    end
+    nothing
+end
+
+# removes g, the game es_peek! just returned
+function es_pop!(q::ESQueue, g::QueuedGame)
+    pop!(q.buckets[g.score+1])
+    delete!(q.keys, g.key)
+    q.n -= 1
+    q
+end
+
 # Decoded moves of recently picked perms, in a fixed
 # number of reusable slots with CLOCK replacement (an approximation of LRU: a
 # hit marks its slot recently used; a miss advances the hand past recently used
@@ -655,11 +718,13 @@ mutable struct Candidate
     cycle_yield::Int
     # hashes of the archived perms (no duplicates in the archive)
     archived::Set{UInt64}
+    # configurations produced since they were last end-searched (es_queue_size)
+    es_queue::ESQueue
 end
 
 Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter) =
     Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter,
-        Perm[], 20, 0, Set{UInt64}())
+        Perm[], 20, 0, Set{UInt64}(), ESQueue())
 
 # Tighten back_accept by one and drop every perm (and its index entry) that
 # falls below the new acceptance window.
@@ -790,6 +855,9 @@ mutable struct SearchStats
     # skipped, or repeated on an already-searched perm (es_when_all_searched)
     es_skips::Int
     es_repeats::Int
+    # snapshots added to the end_search queues, and end_search sources taken from them
+    es_queued::Int
+    es_from_queue::Int
     # timer cycles: (iteration, configurations added during the cycle, step
     # back used, step back for the next cycle)
     cycles::Vector{NTuple{4,Int}}
@@ -808,7 +876,7 @@ end
 
 SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
     Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
-    0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+    0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
     reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
@@ -952,7 +1020,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     window_start::Int=5,
     # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
     # 1 narrows linearly, > 1 narrows fast and spends longer near the max
-    window_shape::Real=1.5,
+    window_shape::Real=1.7,
     # how the timer's steps are paced: 0 = every step lasts one maintenance
     # interval; d > 0 = step k lasts in proportion to k^d (the cycle still takes
     # window_cycle intervals), so more time is spent near the max
@@ -963,7 +1031,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # window_adapt_max), otherwise narrow it (down to window_adapt_min);
     # window_start is the starting value
     window_adapt::Bool=true,
-    window_adapt_target::Int=50_000,
+    window_adapt_target::Int=10_000,
     window_adapt_step::Int=1,
     window_adapt_min::Int=0,
     window_adapt_max::Int=30,
@@ -980,9 +1048,16 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     archive_rejects::Bool=true,
     # end_search remembers searched configurations by their :points (dots) or
     # by their current :lines; islands keep their dots while their lines drift
-    es_searched_key::Symbol=:lines)
+    es_searched_key::Symbol=:lines,
+    # every new best, accepted child and line change of an island is queued (up
+    # to this many per candidate, lowest scores dropped first) as a snapshot;
+    # each end_search slot takes the best unsearched queued game at or above the
+    # window floor when it scores at least the pool's best unsearched perm.
+    # 0 turns the queue off (pool scan only)
+    es_queue_size::Int=100_000)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
+    es_queue_size >= 0 || throw(ArgumentError("es_queue_size must be >= 0, got $es_queue_size"))
     es_searched_key in (:points, :lines) ||
         throw(ArgumentError("es_searched_key must be :points or :lines, got $es_searched_key"))
     es_when_all_searched in (:skip, :random, :best) ||
@@ -1007,6 +1082,14 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # what end_searched records: a configuration's dots, or its current lines
     # (then an island whose lines have drifted since its search is searched again)
     es_key(p::Perm) = es_searched_key === :lines ? p.lines_key : p.moves_hash
+    # snapshot p's current game for end_search, unless that version was searched
+    function queue_for_es!(c::Candidate, p::Perm)
+        es_queue_size > 0 || return
+        k = es_key(p)
+        haskey(end_searched, k) && return
+        es_enqueue!(c.es_queue, k, p.score, p.pack, es_queue_size) && stats !== nothing && (stats.es_queued += 1)
+        return
+    end
 
 
 
@@ -1117,6 +1200,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             candidates[candidate_position].max_score = eval_score
             candidates[candidate_position].max_moves = copy(eval_moves)
             candidates[candidate_position].index[eval_moves_hash] = new_perm
+            queue_for_es!(candidates[candidate_position], new_perm)
 
             verbose && println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
             stats === nothing || (stats_outcome = OUTCOME_BEST)
@@ -1130,6 +1214,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 new_perm = packed_perm(eval_moves, eval_moves_hash)
 
                 candidate.index[eval_moves_hash] = new_perm
+                queue_for_es!(candidate, new_perm)
                 push!(candidate.perms, new_perm)
                 candidate.cycle_yield += 1
                 stats === nothing || (stats_outcome = OUTCOME_ACCEPT)
@@ -1156,6 +1241,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 # refresh the stored perm in place (same board configuration, maybe
                 # other lines or another move order)
                 stored = candidate.index[eval_moves_hash]
+                old_lines = stored.lines_key
                 # the pack only records the set of lines: re-pack only if the
                 # child drew these dots with different lines
                 if stored !== perm || lines_hash(eval_moves) != lines_hash(pmoves)
@@ -1163,6 +1249,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     uncache!(decode_cache, stored)
                 end
                 stored.lines_key = lines_hash(eval_moves)
+                stored.lines_key != old_lines && queue_for_es!(candidate, stored)
             end
 
         elseif archive_rejects && archive_size > 0 && eval_score >= candidate.max_score - candidate.window_start &&
@@ -1197,8 +1284,17 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     p.score
                 end
             end
+            pool_fresh = !haskey(end_searched, es_key(best))
+            # the queue's best snapshot at or above the window floor, if it beats the pool
+            queued = es_queue_size == 0 ? nothing :
+                     es_peek!(end_search_candidate.es_queue,
+                         end_search_candidate.max_score - end_search_candidate.back_accept, end_searched)
+            use_queue = queued !== nothing && (!pool_fresh || queued.score >= best.score)
 
-            if haskey(end_searched, es_key(best))
+            if use_queue
+                es_pop!(end_search_candidate.es_queue, queued)
+                stats === nothing || (stats.es_from_queue += 1)
+            elseif !pool_fresh
                 # every perm in the pool has been searched already
                 if es_when_all_searched === :skip
                     stats === nothing || (stats.es_skips += 1)
@@ -1209,8 +1305,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 end
             end
 
-            if !haskey(end_searched, es_key(best)) || es_when_all_searched !== :skip
-                es_source = perm_moves(codec, best)
+            if use_queue || pool_fresh || es_when_all_searched !== :skip
+                es_source = use_queue ? pack_decode!(codec, Move[], queued.pack) : perm_moves(codec, best)
+                es_source_key = use_queue ? queued.key : es_key(best)
+                es_source_score = length(es_source)
 
                 results = if es_mode === :ucb
                     end_search_ucb(es_source, 5;
@@ -1271,14 +1369,14 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                             end_search_candidate.improvement_counter += 1
                         end
 
-                        verbose && println("$iteration. ES $(best.score) -> $es_score i:$(length(end_search_candidate.index))")
+                        verbose && println("$iteration. ES $es_source_score -> $es_score i:$(length(end_search_candidate.index))")
                     end
                 end
 
-                end_searched[es_key(best)] = true
+                end_searched[es_source_key] = true
 
                 if stats !== nothing
-                    push!(stats.end_searches, (iteration, best.score, es_max_before, length(results),
+                    push!(stats.end_searches, (iteration, es_source_score, es_max_before, length(results),
                         isempty(results) ? 0 : maximum(length, values(results)), es_accepted, es_best))
                     stats.keep_es_sources && push!(stats.es_sources, copy(es_source))
                 end

@@ -466,3 +466,42 @@ end
   end
   @test_throws ErrorException inline_pack(zeros(UInt8, PACK_BYTES + 1))
 end
+
+@testset "ESQueue: best unsearched snapshot at or above the floor, lowest dropped first" begin
+  codec = PackCodec()
+  g = unpack_pack(GOLDEN_PACKS[1][2]).moves
+  pk = inline_pack(pack_encode(codec, g))
+  q = ESQueue()
+  @test es_enqueue!(q, UInt64(1), 150, pk, 4)
+  @test !es_enqueue!(q, UInt64(1), 150, pk, 4)            # same key twice
+  @test es_enqueue!(q, UInt64(2), 160, pk, 4)
+  @test es_enqueue!(q, UInt64(3), 160, pk, 4)             # newest of the 160s
+  @test es_enqueue!(q, UInt64(4), 140, pk, 4)
+  @test es_enqueue!(q, UInt64(5), 155, pk, 4)             # over capacity: the 140 goes
+  @test q.n == 4 && !(UInt64(4) in q.keys)
+  searched = Dict{UInt64,Bool}(UInt64(3) => true)
+  top = es_peek!(q, 150, searched)                         # 3 was searched meanwhile
+  @test top.key == UInt64(2) && top.score == 160
+  @test !(UInt64(3) in q.keys) && q.n == 3
+  es_pop!(q, top)
+  @test es_peek!(q, 150, searched).key == UInt64(5)
+  @test es_peek!(q, 156, searched) === nothing             # nothing left at or above 156
+  @test q.n == 2                                           # below-floor entries wait
+  @test pack_decode!(codec, Move[], es_peek!(q, 0, searched).pack) == pack_decode!(codec, Move[], pk)
+  @test es_enqueue!(q, UInt64(9), 150, pk, 0) == false     # size 0: off
+end
+
+@testset "end_search takes sources from the queue; size 0 is the plain pool scan" begin
+  s = SearchStats(rows=false, keep_es_sources=true)
+  Random.seed!(32)
+  main(max_iterations=40_000, end_search_interval=200, verbose=false, initial_perms_size=10, stats=s,
+    es_when_all_searched=:skip)
+  @test s.es_queued > 0 && s.es_from_queue > 0
+  @test allunique(lines_hash.(s.es_sources))              # no line set searched twice
+  s0 = SearchStats(rows=false)
+  Random.seed!(32)
+  main(max_iterations=40_000, end_search_interval=200, verbose=false, initial_perms_size=10, stats=s0,
+    es_when_all_searched=:skip, es_queue_size=0)
+  @test s0.es_queued == 0 && s0.es_from_queue == 0
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, es_queue_size=-1)
+end
