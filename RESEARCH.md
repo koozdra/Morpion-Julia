@@ -63,7 +63,7 @@ Defaults as of 2026-10-13:
 | `es_step_back_fraction` | 0.4 | end_search unwinds up to 40% of the source game (was 0.25 until 2026-10-11) |
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
 | `dna_storage` | `:pack` | pool keeps a packed set of lines per perm, decoded through a 16k-slot cache (`pack_cache_size`); was `:moves` until 2026-10-04 (see [Memory](#memory)) |
-| `archive_size`, `archive_rejects` | 300,000, true | pruned perms are archived and put back when the window widens again: at each timer reset (or idle reset under `:counters`); since 2026-10-06. Since 2026-10-12 children below the current window but inside the next reset's are archived too, and the archive holds 300k (was 100k) |
+| `archive_size`, `archive_rejects` | 1,000,000, true | pruned perms are archived and put back when the window widens again: at each timer reset (or idle reset under `:counters`); since 2026-10-06. Since 2026-10-12 children below the current window but inside the next reset's are archived too, and the archive held 300k (was 100k); the user later raised it to 600k and then 1M |
 
 ## Selection and search dynamics
 
