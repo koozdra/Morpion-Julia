@@ -930,7 +930,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     new_best_first::Bool=false,
     # keep up to this many pruned perms per candidate and put them back when the
     # idle reset widens the window (0 = pruned perms are dropped)
-    archive_size::Int=10_000_000,
+    archive_size::Int=1_000_000,
     # es_mode = :nrpa settings: NRPA level, iterations per level, warm-start
     # adaptations towards the source, and seconds per end_search call
     es_nrpa_level::Int=2,
