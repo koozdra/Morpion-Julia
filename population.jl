@@ -39,6 +39,7 @@
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 # 178 7EBET5ZlRiSHYc0gSqEaxn9OfXDfr79Vak78WKOe7yv//Wm//9v0
 # 178 CBMXT2TomgiXeiKNAlJFlP65fcOv199WaUv2yjHO7Zv/7uW//370
+# 178 FxwYD6lkowlgyrhYhShWYovy86uD/d79rlNfZhR592s//7U7//u+g
 # 178 ZEhMTa5SEJgWSnjJ2kY3rrRPq/sn++zevl6DtNszde9n63f+6+44
 
 include("morpion.jl")
@@ -1020,7 +1021,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     window_start::Int=5,
     # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
     # 1 narrows linearly, > 1 narrows fast and spends longer near the max
-    window_shape::Real=1.7,
+    window_shape::Real=1,
     # how the timer's steps are paced: 0 = every step lasts one maintenance
     # interval; d > 0 = step k lasts in proportion to k^d (the cycle still takes
     # window_cycle intervals), so more time is spent near the max
@@ -1049,8 +1050,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # end_search remembers searched configurations by their :points (dots) or
     # by their current :lines; islands keep their dots while their lines drift
     es_searched_key::Symbol=:lines,
-    # every new best, accepted child and line change of an island is queued (up
-    # to this many per candidate, lowest scores dropped first) as a snapshot;
+    # every new best, accepted child, line change of an island and end_search
+    # result that enters the pool is queued (up to this many per candidate,
+    # lowest scores dropped first) as a snapshot;
     # each end_search slot takes the best unsearched queued game at or above the
     # window floor when it scores at least the pool's best unsearched perm.
     # 0 turns the queue off (pool scan only)
@@ -1202,7 +1204,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             candidates[candidate_position].index[eval_moves_hash] = new_perm
             queue_for_es!(candidates[candidate_position], new_perm)
 
-            verbose && println("$iteration. $perm_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
+            verbose && println("$iteration. $eval_score ($(perm.visits)) => $eval_score $(candidate.max_score) ###### $eval_score")
             stats === nothing || (stats_outcome = OUTCOME_BEST)
             candidate.idle_counter = 0
             window_schedule === :counters && (candidate.back_accept = default_back_accept)
@@ -1347,6 +1349,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         push!(end_search_candidate.perms, new_perm)
                         end_search_candidate.cycle_yield += 1
                         end_search_candidate.index[es_moves_hash] = new_perm
+                        queue_for_es!(end_search_candidate, new_perm)
                         end_search_candidate.max_moves = es_moves
                         end_search_candidate.max_score = es_score
 
@@ -1360,6 +1363,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         new_perm = packed_perm(es_moves, es_moves_hash)
                         push!(end_search_candidate.perms, new_perm)
                         end_search_candidate.index[es_moves_hash] = new_perm
+                        queue_for_es!(end_search_candidate, new_perm)
                         end_search_candidate.cycle_yield += 1
                         es_accepted += 1
 
