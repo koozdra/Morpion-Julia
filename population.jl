@@ -10,6 +10,7 @@
 # 172 0yAij1VlSSRWkMM4M3Arjrd/2XLr5fl/x7zuu3Xu1/32//a+
 # 172 AENMhclbKcGxHhKhtGnBJdfX1DeJf7L6X+vt09fU7/Ptcv//va
 # 172 AYOOj1VtwCEKSlZSrUDYzo+pZb/2r99/y93O3rvPuv75//bv
+# 172 H4JAH0TZJ5GFXGIkkRGhD63dXtOv/Ue+b69Nv7WnT1/vf/3fZw
 # 172 KBFEq2OtZY0C2sBilIKDRvc+rtm3/U9833lqfurm6b9/f/v7Tw
 # 172 LBFEq2HLWWKB2qBilJqZcOZ3q+y/6xvzfetT91c3Tfv3/9/ae
 # 172 LoyBD5plSCpgxshpTUZV7x4z176/8O/mfz+XX57zt/3z/+r4
@@ -1018,10 +1019,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # cycle going)
     window_schedule::Symbol=:timer,
     window_cycle::Int=128,
-    window_start::Int=5,
+    window_start::Int=10,
     # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
     # 1 narrows linearly, > 1 narrows fast and spends longer near the max
-    window_shape::Real=1,
+    window_shape::Real=2,
     # how the timer's steps are paced: 0 = every step lasts one maintenance
     # interval; d > 0 = step k lasts in proportion to k^d (the cycle still takes
     # window_cycle intervals), so more time is spent near the max
