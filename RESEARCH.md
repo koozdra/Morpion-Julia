@@ -34,11 +34,16 @@ If an entry stops being true (the code or defaults changed), mark it rather than
 - **Per-attempt accept rate doesn't predict final score.** Several changes raised accepts or breakthroughs per call and did nothing end to end. Judge changes on final score.
 - **Keep the Mac awake.** Wrap long batches in `caffeinate -i -s`. On 2026-10-11 the machine went to sleep mid-batch. The starved runs scored 108–150 and looked like a real effect until the power log (`pmset -g log`) showed the sleep.
 - **Defaults drift.** Many entries below were measured under older defaults. Check the date against the defaults history in [Current state](#current-state).
+- **Long runs are the target.** The goal is progress in runs of 24 hours or more, and the user tunes defaults from those. Treat 30-minute A/Bs as early signals: in the 2-hour taboo A/B (2026-10-23) the median run reached its final max between minutes 57 and 76, and one gained at minute 111. Use runs of 2 hours or more for anything that acts late (taboo, archive, window adaptation, restarts).
+- **Check that "off" reproduces the committed search.** New options are added with a default that leaves the search unchanged. Confirm it by comparing a seeded run (max game, pool hashes, window, archive size) against a copy of the committed file (`git show HEAD:population.jl > scratch/population.jl`, plus `morpion.jl`), never by stashing the working tree, which may hold hand-tuned defaults.
 
 **Tools in the repo:**
 
 - `main(stats=SearchStats(reject_sample=k))` records one row per rollout: parent position, visits and hash, pool size, swap count, restart and divergence step, child score, and outcome (no-op / reject / revisit / accept / new best). It also records section timings, every end_search call, and a pool snapshot at each maintenance step. Rejected rollouts are sampled 1 in `k`; weight them by `k`. It costs about 13% throughput and doesn't change results. Non-rejected rollouts are always recorded, which adds about 330 MB over a 30-minute run. For long benchmarks use `SearchStats(rows=false)`, which keeps only the timings, end_search records and snapshots.
 - `main(max_seconds=...)` gives a wall-clock budget.
+- `main(trace=n)` prints n sampled rollouts per debug interval, as `iteration. parent score (parent visits)`.
+- `SearchStats` also counts `reintroduced`, `archived_rejects`, `es_skips` / `es_repeats` (end_search slots with the whole pool already searched), `es_queued` / `es_from_queue` (end_search queue), `tabooed`, and `aa_restarts` / `aa_peaks` (anti-attractor restarts and the peak game of each), plus decode-cache hits and misses.
+- `perm_moves(codec, p)` decodes a pool perm's game (perms store only an inline pack).
 - `test/helpers.jl`'s `enumerate_end_search_targets` exhaustively enumerates every game an end_search can reach from a source. Use it as ground truth for recall.
 - `tune.jl` and `tune_end_search.jl` are the hyperparameter search harnesses.
 - The scripts behind most entries below (ground-truth enumerator with a transposition table, live-source capture, A/B runners) lived in scratch space and were **not committed**.
@@ -59,6 +64,8 @@ Defaults as of 2026-10-13:
 | `end_search_interval` | 5,000 | iterations between end_search calls, about 20% of time in end_search (was 10,000 until 2026-10-11) |
 | `es_when_all_searched` | `:random` | when every perm of the chosen candidate has been end-searched, search a random one again (was `:skip` until 2026-10-13; chosen by the user although the A/B measured −2.9 [−5.9, −0.1], see [Repeating end_search](#repeating-end_search-when-the-whole-pool-has-been-searched-2026-10-11-random-rejected-in-the-ab-made-the-default-on-2026-10-13-by-the-users-choice-best-null)) |
 | `es_queue_size` | 100,000 | every new best, accepted child, island line change and end_search result entering the pool (since 2026-10-21) is queued as a snapshot for end_search; each slot takes the best unsearched snapshot at or above the window floor when it scores at least the pool's best (since 2026-10-16; not A/B tested) |
+| `taboo_visits` | 500,000 | set by the user on 2026-10-23; 100k gave +1.9 and 1M −0.1 in a 2-hour A/B (500k not tested), see [Taboo list for exhausted islands](#taboo-list-for-exhausted-islands-2026-10-23-100k-positive-19-significant-over-8-seeds-not-yet-the-default-1m-null) |
+| `aa_stall`, `aa_overlap` | 0 (off), 0.95 | anti-attractor restarts, under test since 2026-10-23, see [Anti-attractor restarts](#anti-attractor-restarts-2026-10-23-measured-open-restarts-sample-new-regions-but-high-peaks-land-in-known-families) |
 | `es_searched_key` | `:lines` | end_search remembers what it searched by the island's current line set, not its dots, so an island is searched again once its lines drift (since 2026-10-14; not A/B tested) |
 | `es_step_back_fraction` | 0.4 | end_search unwinds up to 40% of the source game (was 0.25 until 2026-10-11) |
 | `es_mode` | `:ucb_then_mast` | UCB end_search followed by a MAST-guided pass, results merged (since 2026-10-08; see [end_search](#end_search)) |
@@ -250,7 +257,7 @@ Together with the earlier follow-up (15: −3.0; 30: −9.0):
 - **Targets of 20k–50k did best.** They settle the step back around 8–20 (mean about 14), which agrees with the fixed-step-back plateau of 10–25.
 - **No run reached 165** in any arm of this A/B, so it says nothing about breakthroughs.
 
-### Taboo list for long-visited perms (2026-10-02): **Rejected** (not built)
+### Taboo list for long-visited perms (2026-10-02): **Rejected** (not built; superseded: built and under test since 2026-10-23, next entries)
 Question: past some visit count (picks since the perm last produced an accepted child), is a perm useless and safe to drop?
 Setup: 6 seeds × 300 s, 2026-10 defaults.
 
@@ -262,6 +269,41 @@ Setup: 6 seeds × 300 s, 2026-10 defaults.
 | 100,000+ | 2% | 4 | 0 |
 
 Accepts fall about 3,000×, but late in a run new bests don't fall with them. Perms past 1,000 visits took 35% of picks and produced 29% of late new bests. The only lossless threshold (100k visits) saves 2% of picks. Perms past 10k visits are under 0.5% of the pool, so a taboo list wouldn't save memory either.
+
+### The step-back archive in practice (2026-10-15): measured
+4 instrumented runs × 20 min (defaults then: `window_start=5`, adaptive target 50,000, step ±1 within 0–30, `archive_size=600_000`, rejects archived), logging every archive trim and timer reset (30 resets):
+
+- **Nothing is lost to the cap:** no trim ever happened (largest archive 296k), and no archived perm was already back in the pool at a reset.
+- **Losses come from two causes only.** (1) The max rose during the cycle: archived perms are compared with the new max at the reset (e.g. 154 → 163 dropped 141k of 144k, all 9+ below the new max). (2) The step back narrowed by one, dropping the perms at the old edge. 17 of 30 resets dropped nothing.
+- **The step back widens almost every cycle:** cycles added fewer configurations than the target, so it grew 6 → 13 within 20 minutes and narrowed only 3 times in 30 resets. The pool after a reset grew to 76k–296k perms by minute 20. In a stuck run (max 154 for six cycles) the window kept widening around the same max.
+- **For long runs** the pool, not the archive, is what grows; see the [performance audit](#performance-audit-at-long-run-pool-sizes-2026-10-16-measured-fixes-open).
+
+### Taboo list for exhausted islands (2026-10-23): 100k **Positive** (+1.9, significant over 8 seeds; not yet the default); 1M **Null**
+In long runs the top islands get picked tens of thousands of times without producing anything new. `taboo_visits` (default 0 = off): at each maintenance step, a perm picked at least that many times since its last accepted child leaves the pool, and its island (pool key) is never accepted again by children, archived rejects, end_search results, archive reintroduction or the end_search queue. Islands at the max can be tabooed too: `max_score` keeps the record, but the window then hangs from the best score left (`Candidate.top`, `window_floor`), so pruning can't empty the pool, and the least visited perm always stays. Off reproduces the previous search exactly.
+
+Calibration, one 10-minute run each (the top perm takes ~40% of picks, ~40k visits/s):
+
+| `taboo_visits` | Max | Tabooed | Window from | Pool at end | Iterations/s |
+|---|---|---|---|---|---|
+| 0 (off) | 156 | 0 | 156 | 1 | 104k |
+| 100,000 | 156 | 82 | 153 | 6,881 | 94k |
+| 1,000,000 | 162 | 3 | 162 | 5 | 100k |
+| 10,000,000 | 156 | 1 (the max island) | 154 | 49 | 102k |
+
+A/B: 2-hour runs × 8 paired seeds (3401–3408), current defaults; off vs 100k vs 1M:
+
+| Arm | Final scores | Mean (median) | Per seed vs off [95%] | Better / tied / worse | Mean best at 10 / 30 / 60 / 90 / 120 min | Final max reached (median) | Tabooed | Pool at end | Iterations/s |
+|---|---|---|---|---|---|---|---|---|---|
+| off | 170 121 159 162 158 167 164 176 | 159.6 (163.0) | — | — | 151.4 / 156.0 / 157.1 / 159.5 / 159.6 | minute 62 | 0 | 77k | 73k |
+| **100k** | 170 120 164 162 162 167 169 **178** | **161.5** (165.5) | **+1.9 [+0.4, +3.5]** | 4 / 3 / 1 | 153.8 / 156.9 / 159.5 / 159.9 / 161.5 | minute 49 | 586 | 27k | 71k |
+| 1M | 170 122 159 160 159 162 166 **178** | 159.5 (161.0) | −0.1 [−1.8, +1.2] | 4 / 2 / 2 | 153.5 / 156.1 / 157.8 / 159.1 / 159.5 | minute 55 | 70 | 45k | 71k |
+
+- **A taboo at 100k visits helps:** ahead at every checkpoint, better on 4 seeds and worse on 1, and the interval excludes zero. Runs also reached their final max sooner (minute 49 against 62).
+- **It shrinks the pool:** 27k perms at the end against 77k, about 590 islands tabooed per run, for about 3% fewer iterations/s. A smaller pool also eases the costs in the [performance audit](#performance-audit-at-long-run-pool-sizes-2026-10-16-measured-fixes-open).
+- **1M is too lenient:** about 70 islands per run, no effect on the mean.
+- **The taboo didn't free stuck runs:** seed 3402 stuck near 121 in every arm.
+- **Caveat:** 8 seeds of 2 hours; the user's target is 24-hour runs, where a taboo list keeps growing (about 290 islands an hour at 100k).
+- **New games:** three different **170**s on seed 3401, one per arm (`ACcjTcaQdQpRHil1eKYW…`, `ACcjTcaQdQpRHil1dKYW…`, `ACcjTcaQeQpVEsEQ…`); on seed 3408 a **176** with the taboo off (`CBMXT2TomgiXeiKtAo1l…`) and a **178** in each taboo arm (`CBMXT2TomgiXeiKNAlJF…` at 1M, `CBMXT2TomgiXeiKNAhJF…` at 100k). Both 178s have exactly the dots of the header's `CBMXT2Tomgi…` and `FxwYD6lk…` 178s, with 171–175 of 178 lines shared: new line versions of that island. All added to the header of `population.jl`.
 
 ### `initial_perms_size` (2026-09-28): **Open**
 Each candidate now starts with n random perms instead of 1 (default 100). Only a 2k-iteration smoke test was run; it has never been A/B tested.
@@ -633,6 +675,29 @@ Running end_search on end_search's own results, to a fixed point, exhaustively o
 
 A neighbour shares most of the source's moves, so its own window covers mostly the same ground. Escaping needs a neighbourhood that changes different moves (see [Open questions](#open-questions-and-next-directions)).
 
+### Separate runs converge on the same island (2026-10-23): measured
+Seed 3401 in the three arms of the taboo A/B: the runs share a seed, so they are identical until the first tabooed perm, and they parted by minute 1.7–2.7 (max 154 then). Each then searched on its own (pool, window, random choices) and reached 170 at minutes 79 (1M), 87 (off) and 111 (100k). The three 170s share 169–170 of their 170 dots and 162–166 lines (best symmetry); the two taboo runs found the same island (identical dots, 165 shared lines). Seed 3402 stuck near 121 in all three arms.
+
+The region a run settles into in its first few minutes seems to decide its basin, and the climb within a basin is reproducible. Removing exhausted islands one at a time (taboo) did not push runs out of the basin. This is the [anti-attractor](#anti-attractor-restarts-2026-10-23-measured-open-restarts-sample-new-regions-but-high-peaks-land-in-known-families) motivation.
+
+### Anti-attractor restarts (2026-10-23): measured; **Open** (restarts sample new regions, but high peaks land in known families)
+`aa_stall` (default 0 = off): when a candidate's max hasn't risen for that many iterations, its best game becomes an attractor (its dots in all 8 symmetries about the cross centre) and the candidate restarts from a fresh random pool, keeping its record (`record_score`, `record_moves`) and all attractors. From then on no configuration that reproduces at least `aa_overlap` of an attractor's dots is accepted (new bests, children, archived rejects, end_search results). Overlap is measured as a share of the attractor's dots, because every game grows from the same cross: a small game lies mostly inside any big one, and a 100-move game can reach at most 100/170 of a 170. For reference, games scoring 155–166 share about 87–89% of their dots with Rosin's 178 regardless of family, and the 170+ games found here share 99%. Off reproduces the previous search exactly.
+
+Runs: 4 hours × 4 seeds (3501–3504), off vs `aa_overlap` 0.95 vs 0.90, `aa_stall` 60M iterations (~15 min):
+
+| Arm | Records | Mean | Restarts per run | Typical peak per restart |
+|---|---|---|---|---|
+| off | 170 161 162 162 | 163.8 | 0 | — |
+| 0.95 | 166 159 161 171 | 164.3 | 8–10 | 153–161 |
+| 0.90 | 166 159 175 166 | 166.5 | 6–9 | 153–162 |
+
+- **Each restart gets 25–40 minutes** (the stall clock plus the climb), so most peaks sit at the 30-minute level (153–162); a few restarts reach high (175 at the 8th restart of seed 3503, 171 at the 10th of seed 3504).
+- **Restarts do reach new regions at that level:** a later peak reproduces typically 84–92% of the closest earlier peak's dots, the same as unrelated games of that size, and below both thresholds.
+- **But the high peaks land in known families.** The 175 has exactly the dots of the header's `KyQihtyDUKLaq0Ec…` 175 in another orientation. All 171 dots of the 171 lie inside the `CBMXT2Tomgi…` / `FxwYD6lk…` 178 island (Rosin's family). The anti-attractor list only holds a run's own peaks, so other runs' families stay reachable, and the search finds them again.
+- **The records are too few to compare** (4 seeds; 0.90's lead comes from the 175).
+- **Next:** seed the attractor list with all known 170+ families from the header, so runs must find something else; and the forest search (many roots, UCB over each root's tree of useful modifications) for diversity by structure.
+- **New games:** **175** `HEJFVwzx…` (0.90, seed 3503; a reorientation of `KyQihtyDUKLaq0Ec…`), **171** `AYOOj1VxKGGimNoZ…` (0.95, seed 3504), **170** `EykgD3A04NJBWojj…` (off, seed 3501; same dots as the header's `Ey0gDuBp…` and `EykgD3Iy…` 170s); added to the header of `population.jl`.
+
 ## Performance
 
 ### Evaluation checkpointing (2026-09-28): **Adopted**, then superseded (removed with full-DNA storage on 2026-10-15)
@@ -687,6 +752,20 @@ All within ±1%, with identical results. The hot loops are already `@inbounds`, 
 - **Much less memory:** 502 MB peak for the threaded process against about 330–360 MB *each* for separate processes (~2.7 GB total). The runtime and compiled code are shared.
 
 Threads don't speed up a single search; the main loop is sequential.
+
+### Performance audit at long-run pool sizes (2026-10-16): measured; fixes **Open**
+A 3-minute profiled run (current defaults, small pool): 78% of time evaluating children, 18% in end_search, under 0.1% in maintenance; garbage collection 0.1%; 122 bytes allocated per iteration. The engine runs at ~100 ns per move; an unchecked `Int8` conversion in `Move` creation (flagged by the profiler) measured the same. DNA rebuild, decode and pack together ~5%.
+
+Costs that grow with the pool (benchmarked inside functions):
+
+| Step | How often | Cost at 100k / 1M / 3M perms | Possible fix |
+|---|---|---|---|
+| end_search source pick: scan of the pool with a hash lookup per perm (~8–10 ns each) | every 5,000 iterations (~50 ms of search) | 0.6 / 10 / 24 ms, so ~1% / ~17% / ~40% of time | a searched key on each perm, or track the best unsearched perm incrementally |
+| Sort by visits (through pointers) | every 100k iterations (~1 s) | 4 / 86 / 353 ms | sort an extracted key array: 3 / 9 / 123 ms, same order |
+| Archive trim (reverse + full sort) | each maintenance step while over the cap | seconds at a 10M cap | score histogram cutoff and a single pass |
+| Decode-cache misses (16,384 slots; a miss costs about an iteration) | every pick outside the cache | at a 35k pool: 90.6% hits, 77k it/s; 131,072 slots: 95.9%, 83k it/s (+8%, +134 MB) | larger `pack_cache_size`, or faster decode |
+
+Picks outside the top 16,384 positions are (16,384/n)^0.1 of all picks: about 25% at 300k perms and 34% at 1M. With the step back widening over long runs (see [the step-back archive in practice](#the-step-back-archive-in-practice-2026-10-15-measured)), these costs can take a large share of a long run.
 
 ## Memory
 
@@ -781,7 +860,8 @@ Researched 2026-09-24.
 - **The record:** 5T 178 (Rosin, August 2011, nested rollout policy adaptation, NRPA) is still unbeaten.
 - **Later compute converged on Rosin's grid:** Nagórko (2019) found 178 in 10/10 runs of level-6 parallel NRPA on 768 cores, always Rosin's grid up to symmetry. Buzer and Cazenave (2021) spent about 57k core-hours on level-5 NRPA; 2% of runs hit 178, and warm starts from the best sequence gave only 176–178.
 - **Upper bound:** 485 (MIP, 2015). Its relaxation admits 317-move grids, so it can't get much tighter.
-- **Our 178s are Rosin's family:** the two 178s in `population.jl`'s header share 177/178 dots and 171 and 174 of 178 lines with Rosin's 178 (best of 8 symmetries). Our 177s are variants of Rosin's 177A/B. Other families in the archive top out at 170–175.
+- **Our 178s are Rosin's family:** `0yAij…` and `7EBET…` share 177/178 dots and 171 and 174 of 178 lines with Rosin's 178 (best of 8 symmetries), and all 178 dots with each other. `CBMXT2Tomgi…` and `FxwYD6lk…` (a long run, 2026-10-21) share all 178 dots with each other (174 lines) and 177 with `0yAij…`. `ZEhMTa5…` (2026-10-11) is the most distinct: 167 dots and 107 lines shared with Rosin's. Our 177s are variants of Rosin's 177A/B. Other families in the archive top out at 170–175.
+- **Both methods funnel into the same basin (2026-10-13):** final games of plain NRPA (levels 3–4, 155–166) share a median 89% of their dots with Rosin's 178, about the same as ours below 170 (87–88%; any good game shares this much), while our 170+ games share 99%.
 - **DNA keys:** the key (new dot, direction) never collides between simultaneously legal lines (0 in about 376k moves), so re-keying by line would add nothing.
 - **Rosin's grids:** http://www.morpionsolitaire.com/Grid5T178Rosin.txt (also 177RosinA/B), in Pentasol format. To replay one here: the reference point R is cross cell (3,3), (a,b) is (x,y), and line cells are dot + (i − offset)·v for i in −2..2, with v = −1 × {'|':(0,1), '-':(1,0), '/':(1,−1), '\':(1,1)}.
 - **Directions to skip:** deep learning (5D only, below record), symmetric-grid search (ceiling about 136), LP pruning.
@@ -809,10 +889,11 @@ Same engine, same machine, one core per run. NRPA as in Rosin (2011): softmax pl
 
 Roughly in priority order:
 
-1. **Compare settings over 30-minute runs, not 3–5 minutes:** scores keep climbing until about minute 25 (see [Long runs](#long-runs-with-the-current-defaults-2026-10-02-measured)), so short A/Bs may miss effects that only show up later.
+1. **Judge settings on long runs:** 2-hour runs still gain at minutes 57–111 (2026-10-23), and the target is 24 hours or more. Staged or 4-hour-plus A/Bs, or analysing the user's long-run logs, say more than adding 30-minute seeds.
 2. **Undo a move and only what depends on it (dependency-closure ruin-and-recreate):** remove a move plus every move that depends on it, keep the rest (always a valid game), and re-complete. It changes mid-game moves without undoing everything after them, which end_search can't do. First measurement: how small these dependent sets are, and how many end_search dead ends (above) gain a better neighbour.
 3. **Best-of-N parallel runs:** the machine has 14 cores and runs are single-threaded. High-variance settings (frequent re-sort) might pay off when only the maximum over N runs counts.
 4. **Tune the current defaults in the plateau regime:** all hyperparameter searches so far were early-phase or used older defaults.
 5. **End-to-end check of UCB end_search**, which was made default without one.
-6. **Bound the pool:** it grows without limit under the current settings. That's cheap in memory now (about 0.8 KB per perm), but it also spreads picks out.
-7. **Ranked directions from the September literature review:** an exact endgame proof for the 178 family; a dot-set SAT/MIP for 179-dot sets near the family; anti-attractor diversity (reject grids overlapping the family, islands, symmetry-canonical dedup); calibration against NRPA (only for publishing).
+6. **Bound the pool:** it grows without limit, and the adaptive step back widens almost every cycle. Memory is cheap now (88 bytes per perm), but the end_search pick, the visits sort and decode-cache misses all scale with it ([audit](#performance-audit-at-long-run-pool-sizes-2026-10-16-measured-fixes-open)). Options: a pool cap, a lower `window_adapt_max`, and the audit's fixes.
+7. **Ranked directions from the September literature review:** an exact endgame proof for the 178 family; a dot-set SAT/MIP for 179-dot sets near the family; anti-attractor diversity (first version under test, see [Anti-attractor restarts](#anti-attractor-restarts-2026-10-23-measured-open-restarts-sample-new-regions-but-high-peaks-land-in-known-families)); calibration against NRPA (only for publishing).
+8. **Taboo for exhausted islands:** 100k visits gave +1.9 over 8 two-hour seeds; next, check it on longer runs before making it the default; see [Taboo list for exhausted islands](#taboo-list-for-exhausted-islands-2026-10-23-100k-positive-19-significant-over-8-seeds-not-yet-the-default-1m-null).

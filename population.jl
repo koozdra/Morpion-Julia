@@ -1,11 +1,16 @@
 # 166 HYhAHqWtBWCUVGkZRRxasI/rdT+39uUf9d22ap+y7/fX7/3+
+# 170 ACcjTcaQdQpRHil1dKYW1fJf1rX7Szq+o3d7tt/v7e91///o
+# 170 ACcjTcaQdQpRHil1eKYW1fJf1rX7Szq8q/n1b1/v7e91///Y
+# 170 ACcjTcaQeQpVEsEQnSnBK9W/9elfdMz1fU3d522/39re9f//6
 # 170 E2wgDbSgtgTKNxSpU6WeXa8Fa8U1b3Pl9Sut/rX/fvd3r///Q
 # 170 Ey0gDuBpwaSCtRHDsNrbIXYUQ//n9ev7Ivz3VX37/5/rf//9
+# 170 EykgD3A04NJBWojj2OyiPTWba6u/7fI+qPa79bfv/nfG///9
 # 170 EykgD3IyGWSDsFAhMXIsPeav6+ju7V07eqfruddfv/nfO///6
 # 170 ISSMt+QY82FihGKk9UXLaGv7cr/m/AvE3jPrcXT//Wv7cv/+e
 # 170 LoyBD52Cys5AUMZgVIVt3XM31Nf7v3Nk/lL/du+23/XLL/fbw
 # 170 qiQRjpmQsgU2CKFJbAAfUVaF5deL//zru/vbens3yfr31z+/trw
 # 171 0yAij1VlSSRWksIzgzcdfpnkXTvX/Jn+meaz21Z+rf/1sX59/g
+# 171 AYOOj1VxKGGimNoZQqoPUm66jBbb5t3szfK/TO7ZT6vv97VP53/
 # 171 F0wgDolGsg5l0kkIno6jbiovx31/l5b3v42y8je9dvt2d//vvQ
 # 172 0yAij1VlSSRWkMM4M3Arjrd/2XLr5fl/x7zuu3Xu1/32//a+
 # 172 AENMhclbKcGxHhKhtGnBJdfX1DeJf7L6X+vt09fU7/Ptcv//va
@@ -21,7 +26,9 @@
 # 174 AYOOj1VpKGGjmFNDKiyruq3ft/utX15Nd3vmqv3/3u5a/vb/
 # 174 FEBMv6lokkqKS4cwzBofV1R1Xre+/uWv99l+da9v/vbL9d7f4
 # 175 CBMXT2TomgmTmJOEtJJqs/Uda9vn8Lz+M81ndct93r/3p9/9+0
+# 175 HEJFVwzxURRbXXIUwqs0J6v6u8xnb/deZc3Wv5vf327t9vnPto
 # 175 KyQihtyDUKLaq0EcpmqsRa/XuYvfN79c9T0t356/9+23fb5y/U
+# 176 CBMXT2TomgiXeiKtAo1lfo6C27939xsv7/PjOW+77/3pv/+3X
 # 176 FEBMv6lokkiL84GQw5LldzoifP3390p//WMfmu+6/f909//erg
 # 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
 # 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
@@ -39,7 +46,9 @@
 # 177 IiAjf2jwkjJLE4ZwykwtXXP7+ur2prZ9ysuur49vK9fvaef+/3w
 # 178 0yAij1VlSSRWgtGcINgU4jPuvLppfb390rzecGjnu8r//rpv//b9
 # 178 7EBET5ZlRiSHYc0gSqEaxn9OfXDfr79Vak78WKOe7yv//Wm//9v0
+# 178 CBMXT2TomgiXeiKNAhJFlKvy9dWh/b37xbrvKHjlv31f93Hv/796
 # 178 CBMXT2TomgiXeiKNAlJFlP65fcOv199WaUv2yjHO7Zv/7uW//370
+# 178 CBMXT2TomgiXeiKNAlJFlP65fcOv199eJrXeUOOd2zf/3dO//v3o
 # 178 FxwYD6lkowlgyrhYhShWYovy86uD/d79rlNfZhR592s//7U7//u+g
 # 178 ZEhMTa5SEJgWSnjJ2kY3rrRPq/sn++zevl6DtNszde9n63f+6+44
 
@@ -593,6 +602,7 @@ perm_moves(codec::PackCodec, p::Perm) = pack_decode!(codec, Move[], p.pack)
 # again before the next end_search slot, so the snapshot keeps this version.
 struct QueuedGame
     key::UInt64       # its end_searched key (lines or points, see es_searched_key)
+    island::UInt64    # its pool key (moves_hash), to skip tabooed islands
     score::Int16
     pack::InlinePack
 end
@@ -609,9 +619,9 @@ end
 
 ESQueue() = ESQueue([QueuedGame[] for _ in 1:ES_QUEUE_SCORES], Set{UInt64}(), 0)
 
-function es_enqueue!(q::ESQueue, key::UInt64, score::Integer, pack::InlinePack, cap::Int)
+function es_enqueue!(q::ESQueue, key::UInt64, score::Integer, pack::InlinePack, cap::Int; island::UInt64=key)
     (cap <= 0 || key in q.keys) && return false
-    push!(q.buckets[score+1], QueuedGame(key, score, pack))
+    push!(q.buckets[score+1], QueuedGame(key, island, score, pack))
     push!(q.keys, key)
     q.n += 1
     while q.n > cap
@@ -627,14 +637,15 @@ function es_enqueue!(q::ESQueue, key::UInt64, score::Integer, pack::InlinePack, 
 end
 
 # The highest scoring queued game at or above `floor` whose key isn't in
-# `searched`, left in the queue (es_pop! takes it); entries searched meanwhile
-# are dropped on the way. Entries below the floor wait for a wider window.
-function es_peek!(q::ESQueue, floor::Integer, searched::AbstractDict)
+# `searched` and whose island isn't in `taboo`, left in the queue (es_pop!
+# takes it); entries searched or tabooed meanwhile are dropped on the way.
+# Entries below the floor wait for a wider window.
+function es_peek!(q::ESQueue, floor::Integer, searched::AbstractDict, taboo::AbstractSet=Set{UInt64}())
     for s in ES_QUEUE_SCORES:-1:max(1, floor + 1)
         b = q.buckets[s]
         while !isempty(b)
             g = b[end]
-            haskey(searched, g.key) || return g
+            (haskey(searched, g.key) || g.island in taboo) || return g
             pop!(b)
             delete!(q.keys, g.key)
             q.n -= 1
@@ -722,11 +733,80 @@ mutable struct Candidate
     archived::Set{UInt64}
     # configurations produced since they were last end-searched (es_queue_size)
     es_queue::ESQueue
+    # islands (pool keys) dropped for good after taboo_visits fruitless picks
+    taboo::Set{UInt64}
+    # score the acceptance window hangs from: max_score, unless every island at
+    # the max has been tabooed, then the best score left in the pool
+    top::Int
+    # iteration of the last rise of max_score (anti-attractor stall clock)
+    last_gain::Int
+    # best game ever, kept across anti-attractor restarts (max_moves restarts)
+    record_moves::Vector{Move}
+    record_score::Int
+    restarts::Int
 end
 
 Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter) =
     Candidate(visits, perms, index, max_moves, max_score, back_accept, idle_counter, improvement_counter,
-        Perm[], 20, 0, Set{UInt64}(), ESQueue())
+        Perm[], 20, 0, Set{UInt64}(), ESQueue(), Set{UInt64}(), max_score, 0, max_moves, max_score, 0)
+
+# A game the search converged to (anti-attractor): its dots in all 8 symmetries
+# of the board about the cross centre (4.5, 4.5), each as a board bitmap.
+struct Attractor
+    score::Int
+    images::Vector{BitVector}
+end
+
+const BOARD_SYMMETRIES = ((x, y) -> (x, y), (x, y) -> (9 - x, y), (x, y) -> (x, 9 - y), (x, y) -> (9 - x, 9 - y),
+    (x, y) -> (y, x), (x, y) -> (9 - y, x), (x, y) -> (y, 9 - x), (x, y) -> (9 - y, 9 - x))
+
+function Attractor(moves::Vector{Move})
+    images = map(BOARD_SYMMETRIES) do f
+        b = falses(46 * 46)
+        for m in moves
+            x, y = f(Int(m.x), Int(m.y))
+            b[board_index(x, y)] = true
+        end
+        b
+    end
+    Attractor(length(moves), collect(images))
+end
+
+# share of the attractor's dots that the game reproduces, best symmetry. Every
+# game grows from the same cross, so a small game lies mostly inside any big
+# one; measured against the attractor, only near-copies of it score high
+# (a 100-move game reaches at most 100/score)
+function attractor_overlap(a::Attractor, moves::Vector{Move})
+    best = 0
+    @inbounds for img in a.images
+        n = 0
+        for m in moves
+            n += img[board_index(m.x, m.y)]
+        end
+        best = max(best, n)
+    end
+    best / a.score
+end
+
+# lowest score inside the acceptance window
+window_floor(c::Candidate) = c.top - c.back_accept
+
+# Drops every perm picked taboo_visits times since its last accepted child and
+# puts its island on the taboo list, keeping at least the least visited perm;
+# then re-anchors the window on the best score left. Returns how many went.
+function taboo_exhausted!(c::Candidate, taboo_visits::Int)
+    taboo_visits > 0 || return 0
+    n0 = length(c.perms)
+    keep = argmin(p -> p.visits, c.perms)
+    filter!(c.perms) do p
+        (p.visits < taboo_visits || p === keep) && return true
+        delete!(c.index, p.moves_hash)
+        push!(c.taboo, p.moves_hash)
+        false
+    end
+    c.top = min(c.max_score, maximum(p -> Int(p.score), c.perms))
+    n0 - length(c.perms)
+end
 
 # Tighten back_accept by one and drop every perm (and its index entry) that
 # falls below the new acceptance window.
@@ -742,7 +822,7 @@ end
 # max_score - back_accept.
 function prune_below!(c::Candidate; archive_size::Int=0)
     filter!(c.perms) do perm
-        if perm.score < c.max_score - c.back_accept
+        if perm.score < window_floor(c)
             delete!(c.index, perm.moves_hash)
             if archive_size > 0 && !(perm.moves_hash in c.archived)
                 push!(c.archive, perm)
@@ -783,7 +863,7 @@ function reintroduce_and_log!(c::Candidate, iteration::Int, verbose::Bool, stats
     if verbose && (!isempty(back) || dropped > 0)
         println("$iteration. reintroduced $(sum(last, back; init=0)) archived configurations: ",
             join(["$(sc)×$(n)" for (sc, n) in back], " "),
-            " (window >$(c.max_score - c.back_accept); dropped $dropped below it)")
+            " (window >$(window_floor(c)); dropped $dropped below it)")
     end
 end
 
@@ -792,11 +872,11 @@ end
 # (below the window, or rediscovered meanwhile) are dropped. Returns the number
 # put back at each score, highest first, and the number dropped below the window.
 function reintroduce!(c::Candidate)
-    floor_score = c.max_score - c.back_accept
+    floor_score = window_floor(c)
     counts = Dict{Int,Int}()
     dropped = 0
     for p in c.archive
-        if p.score < floor_score
+        if p.score < floor_score || p.moves_hash in c.taboo
             dropped += 1
         elseif !haskey(c.index, p.moves_hash)
             push!(c.perms, p)
@@ -860,6 +940,11 @@ mutable struct SearchStats
     # snapshots added to the end_search queues, and end_search sources taken from them
     es_queued::Int
     es_from_queue::Int
+    # perms dropped and islands tabooed by taboo_visits
+    tabooed::Int
+    # anti-attractor restarts: (iteration, peak score) and the peak games
+    aa_restarts::Vector{Tuple{Int,Int}}
+    aa_peaks::Vector{Vector{Move}}
     # timer cycles: (iteration, configurations added during the cycle, step
     # back used, step back for the next cycle)
     cycles::Vector{NTuple{4,Int}}
@@ -878,7 +963,7 @@ end
 
 SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
     Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
-    0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, 0, 0, 0, NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+    0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Tuple{Int,Int}[], Vector{Move}[], NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
     reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
@@ -1057,10 +1142,25 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # each end_search slot takes the best unsearched queued game at or above the
     # window floor when it scores at least the pool's best unsearched perm.
     # 0 turns the queue off (pool scan only)
-    es_queue_size::Int=100_000)
+    es_queue_size::Int=100_000,
+    # > 0: at each maintenance step a perm picked this many times since its last
+    # accepted child leaves the pool and its island is never accepted again (by
+    # children, end_search, the archive or the end_search queue); the window then
+    # hangs from the best island left if every island at the max is gone. 0 = off
+    taboo_visits::Int=500_000,
+    # anti-attractor: > 0 = when a candidate's max hasn't risen for this many
+    # iterations, its best game becomes an attractor and the candidate restarts
+    # from a fresh random pool (keeping its record); from then on any game that
+    # reproduces at least aa_overlap of an attractor's dots (any symmetry) is
+    # never accepted. 0 = off
+    aa_stall::Int=0,
+    aa_overlap::Real=0.95)
     es_mode in (:sequential, :ucb, :nrpa, :ucb_then_mast, :mast_then_nrpa) ||
         throw(ArgumentError("es_mode must be :sequential, :ucb, :nrpa, :ucb_then_mast or :mast_then_nrpa, got $es_mode"))
     es_queue_size >= 0 || throw(ArgumentError("es_queue_size must be >= 0, got $es_queue_size"))
+    taboo_visits >= 0 || throw(ArgumentError("taboo_visits must be >= 0, got $taboo_visits"))
+    aa_stall >= 0 || throw(ArgumentError("aa_stall must be >= 0, got $aa_stall"))
+    0 < aa_overlap <= 1 || throw(ArgumentError("aa_overlap must be in (0, 1], got $aa_overlap"))
     es_searched_key in (:points, :lines) ||
         throw(ArgumentError("es_searched_key must be :points or :lines, got $es_searched_key"))
     es_when_all_searched in (:skip, :random, :best) ||
@@ -1090,15 +1190,16 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         es_queue_size > 0 || return
         k = es_key(p)
         haskey(end_searched, k) && return
-        es_enqueue!(c.es_queue, k, p.score, p.pack, es_queue_size) && stats !== nothing && (stats.es_queued += 1)
+        es_enqueue!(c.es_queue, k, p.score, p.pack, es_queue_size; island=p.moves_hash) &&
+            stats !== nothing && (stats.es_queued += 1)
         return
     end
 
 
 
-    for i in 1:initial_candidates_size
-        # seed each candidate with initial_perms_size random perms (duplicate board
-        # configurations are dropped), best first
+    # a candidate's starting pool: initial_perms_size random perms (duplicate
+    # board configurations dropped), best first
+    function fresh_pool()
         perms = Perm[]
         index = Dict{UInt64,Perm}()
         for _ in 1:initial_perms_size
@@ -1113,6 +1214,14 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             index[perm_moves_hash] = new_perm
         end
         sort!(perms, by=p -> -p.score)
+        perms, index
+    end
+
+    attractors = Attractor[]
+    attracted(moves) = aa_stall > 0 && any(a -> attractor_overlap(a, moves) >= aa_overlap, attractors)
+
+    for i in 1:initial_candidates_size
+        perms, index = fresh_pool()
         best = perms[1]
         best_moves = perm_moves(codec, best)
 
@@ -1168,7 +1277,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         if tracing
             trace_visits = perm.visits
             trace_max = candidate.max_score
-            trace_floor = candidate.max_score - candidate.back_accept
+            trace_floor = window_floor(candidate)
         end
 
         stats === nothing || (eval_t0 = time_ns())
@@ -1191,8 +1300,15 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
         end
 
         is_in_index = haskey(candidate.index, eval_moves_hash)
+        is_taboo = taboo_visits > 0 && eval_moves_hash in candidate.taboo
+        # anti-attractor: a child near a game the search already converged to is
+        # never accepted (checked only for children that could be)
+        aa_blocked = !isempty(attractors) && !is_in_index &&
+                     eval_score >= min(window_floor(candidate), candidate.top - candidate.window_start) &&
+                     attracted(eval_moves)
+        is_taboo |= aa_blocked
 
-        if eval_score > candidate.max_score
+        if eval_score > candidate.max_score && !aa_blocked
             new_perm = packed_perm(eval_moves, eval_moves_hash)
 
             # a new best goes to the front (picked most) or waits at the back for
@@ -1201,7 +1317,13 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             push!(candidates[candidate_position].perms, new_perm)
             candidates[candidate_position].cycle_yield += 1
             candidates[candidate_position].max_score = eval_score
+            candidates[candidate_position].top = eval_score
             candidates[candidate_position].max_moves = copy(eval_moves)
+            candidates[candidate_position].last_gain = iteration
+            if eval_score > candidates[candidate_position].record_score
+                candidates[candidate_position].record_score = eval_score
+                candidates[candidate_position].record_moves = candidates[candidate_position].max_moves
+            end
             candidates[candidate_position].index[eval_moves_hash] = new_perm
             queue_for_es!(candidates[candidate_position], new_perm)
 
@@ -1211,7 +1333,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             window_schedule === :counters && (candidate.back_accept = default_back_accept)
 
 
-        elseif eval_score >= (candidate.max_score - candidate.back_accept)
+        elseif eval_score >= window_floor(candidate) && !is_taboo
 
             if !is_in_index
                 new_perm = packed_perm(eval_moves, eval_moves_hash)
@@ -1235,7 +1357,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 perm.visits = 0
 
                 candidate.idle_counter = max(0, candidate.idle_counter - idle_decrement)
-                if eval_score > (candidate.max_score - candidate.back_accept)
+                if eval_score > window_floor(candidate)
 
                     candidate.improvement_counter += 1
                 end
@@ -1255,7 +1377,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 stored.lines_key != old_lines && queue_for_es!(candidate, stored)
             end
 
-        elseif archive_rejects && archive_size > 0 && eval_score >= candidate.max_score - candidate.window_start &&
+        elseif archive_rejects && archive_size > 0 && !is_taboo && eval_score >= candidate.top - candidate.window_start &&
             !is_in_index && !(eval_moves_hash in candidate.archived)
             # below the current window but inside the next reset's: keep it for then
             push!(candidate.archive, packed_perm(eval_moves, eval_moves_hash))
@@ -1290,8 +1412,8 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             pool_fresh = !haskey(end_searched, es_key(best))
             # the queue's best snapshot at or above the window floor, if it beats the pool
             queued = es_queue_size == 0 ? nothing :
-                     es_peek!(end_search_candidate.es_queue,
-                         end_search_candidate.max_score - end_search_candidate.back_accept, end_searched)
+                     es_peek!(end_search_candidate.es_queue, window_floor(end_search_candidate), end_searched,
+                         end_search_candidate.taboo)
             use_queue = queued !== nothing && (!pool_fresh || queued.score >= best.score)
 
             if use_queue
@@ -1342,7 +1464,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
                     is_in_index = haskey(end_search_candidate.index, es_moves_hash)
 
-                    if es_score > end_search_candidate.max_score
+                    es_blocked = !isempty(attractors) && attracted(es_moves)
+
+                    if es_score > end_search_candidate.max_score && !es_blocked
                         end_search_candidate.visits = 0
                         new_perm = packed_perm(es_moves, es_moves_hash)
 
@@ -1353,6 +1477,12 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         queue_for_es!(end_search_candidate, new_perm)
                         end_search_candidate.max_moves = es_moves
                         end_search_candidate.max_score = es_score
+                        end_search_candidate.top = es_score
+                        end_search_candidate.last_gain = iteration
+                        if es_score > end_search_candidate.record_score
+                            end_search_candidate.record_score = es_score
+                            end_search_candidate.record_moves = es_moves
+                        end
 
                         verbose && println("$iteration. $(es_score) -> $( end_search_candidate.max_score) ###### $(end_search_candidate.max_score)")
 
@@ -1360,7 +1490,8 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         window_schedule === :counters && (end_search_candidate.back_accept = default_back_accept)
                         es_best += 1
 
-                    elseif es_score >= (end_search_candidate.max_score - end_search_candidate.back_accept) && !is_in_index
+                    elseif es_score >= window_floor(end_search_candidate) && !is_in_index && !es_blocked &&
+                           !(es_moves_hash in end_search_candidate.taboo)
                         new_perm = packed_perm(es_moves, es_moves_hash)
                         push!(end_search_candidate.perms, new_perm)
                         end_search_candidate.index[es_moves_hash] = new_perm
@@ -1369,7 +1500,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                         es_accepted += 1
 
                         end_search_candidate.idle_counter = max(0, end_search_candidate.idle_counter - idle_decrement)
-                        if es_score > (end_search_candidate.max_score - end_search_candidate.back_accept)
+                        if es_score > window_floor(end_search_candidate)
 
                             end_search_candidate.improvement_counter += 1
                         end
@@ -1398,6 +1529,40 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
 
 
             for c in sort(candidates, by=(c -> c.max_score))
+                if aa_stall > 0 && iteration - c.last_gain >= aa_stall
+                    # converged: remember this peak and start over elsewhere
+                    push!(attractors, Attractor(c.max_moves))
+                    if stats !== nothing
+                        push!(stats.aa_restarts, (iteration, c.max_score))
+                        push!(stats.aa_peaks, copy(c.max_moves))
+                    end
+                    verbose && println("$iteration. attractor at $(c.max_score) (no gain for $(iteration - c.last_gain) ",
+                        "iterations): restart $(c.restarts + 1), $(length(attractors)) attractors, record $(c.record_score)")
+                    perms, index = fresh_pool()
+                    c.perms = perms
+                    c.index = index
+                    c.max_moves = perm_moves(codec, perms[1])
+                    c.max_score = perms[1].score
+                    c.top = c.max_score
+                    c.visits = 0
+                    c.idle_counter = 0
+                    c.improvement_counter = 0
+                    c.cycle_yield = 0
+                    c.window_start = window_start
+                    c.back_accept = window_start
+                    empty!(c.archive)
+                    empty!(c.archived)
+                    c.es_queue = ESQueue()
+                    empty!(c.taboo)
+                    c.last_gain = iteration
+                    c.restarts += 1
+                end
+                if taboo_visits > 0
+                    n = taboo_exhausted!(c, taboo_visits)
+                    stats === nothing || (stats.tabooed += n)
+                    verbose && n > 0 && println("$iteration. tabooed $n exhausted configurations (>= $taboo_visits visits): ",
+                        "taboo list $(length(c.taboo)), pool $(length(c.perms)), window from $(c.top) (max $(c.max_score))")
+                end
                 if window_schedule === :timer
                     # the window sweeps from window_start below the max to the max
                     # over window_cycle maintenance intervals, then resets wide
@@ -1425,6 +1590,9 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                 elseif c.improvement_counter >= improvement_step_up
                     prune_candidate!(c; archive_size=archive_size)
                 end
+                # children and the archive may have brought back scores above the
+                # anchor since tabooing lowered it
+                taboo_visits > 0 && (c.top = min(c.max_score, maximum(p -> Int(p.score), c.perms)))
 
                 if should_print
                     max_pack = generate_pack(c.max_moves)
@@ -1433,7 +1601,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     phase = window_schedule === :timer ?
                             "$(timer_step(iteration, debug_interval, window_cycle, window_dwell))/$(window_cycle)" :
                             "idle:$(round(c.idle_counter, digits=1)) impr:$(c.improvement_counter)"
-                    println("$iteration. $(c.max_score) >$(c.max_score - c.back_accept) $(round(elapsed, digits=2))s $phase i:$(length(c.index)) $max_pack")
+                    println("$iteration. $(c.max_score) >$(window_floor(c)) $(round(elapsed, digits=2))s $phase i:$(length(c.index)) $max_pack")
                 end
 
 

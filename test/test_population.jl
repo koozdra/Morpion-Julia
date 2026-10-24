@@ -505,3 +505,78 @@ end
   @test s0.es_queued == 0 && s0.es_from_queue == 0
   @test_throws ArgumentError main(max_iterations=10, verbose=false, es_queue_size=-1)
 end
+
+@testset "taboo_exhausted! drops long-visited perms for good and re-anchors the window" begin
+  codec = PackCodec()
+  rng = MersenneTwister(61)
+  perms = Perm[]; index = Dict{UInt64,Perm}()
+  while length(perms) < 12
+    g = random_game(rng)[2]
+    h = points_hash(g)
+    haskey(index, h) && continue
+    p = Perm(codec, g, h); push!(perms, p); index[h] = p
+  end
+  max_score = Int(maximum(p.score for p in perms))
+  c = Candidate(0, perms, index, Move[], max_score, 50, 0.0, 0)
+  @test c.top == max_score && window_floor(c) == max_score - 50
+  for p in perms
+    p.visits = p.score == max_score ? 1_000 : 10   # every island at the max is exhausted
+  end
+  all_perms = copy(perms)                           # taboo_exhausted! filters c.perms in place
+  n = taboo_exhausted!(c, 1_000)
+  @test n == count(p -> p.score == max_score, all_perms)
+  @test all(p -> p.visits < 1_000, c.perms)
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  @test all(p -> (p.score == max_score) == (p.moves_hash in c.taboo), all_perms)
+  @test c.top == maximum(p.score for p in c.perms) < max_score   # anchored on what's left
+  @test c.max_score == max_score                                  # the record stays
+  # the pool never empties: the least visited perm stays
+  for p in c.perms; p.visits = 5_000; end
+  c.perms[1].visits = 4_000
+  taboo_exhausted!(c, 1_000)
+  @test length(c.perms) == 1 && c.perms[1].visits == 4_000
+  @test taboo_exhausted!(c, 0) == 0
+end
+
+@testset "main() with taboo_visits never brings a tabooed island back" begin
+  s = SearchStats(rows=false)
+  Random.seed!(33)
+  cs = main(max_iterations=60_000, debug_interval=1000, end_search_interval=500, verbose=false,
+    initial_perms_size=10, stats=s, taboo_visits=200, window_cycle=8)
+  @test s.tabooed > 0
+  for c in cs
+    @test !isempty(c.perms)
+    @test isempty(intersect(c.taboo, Set(keys(c.index))))
+    @test !any(p -> p.moves_hash in c.taboo, c.archive)
+    @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+    @test c.top <= c.max_score
+  end
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, taboo_visits=-1)
+end
+
+@testset "attractor overlap: symmetric copies match, small games don't" begin
+  g = unpack_pack(GOLDEN_PACKS[end][2]).moves
+  a = Attractor(g)
+  @test attractor_overlap(a, g) == 1.0
+  mirrored = [Move(9 - m.x, m.y, 9 - m.start_x, m.start_y, m.direction) for m in g]   # same dots, mirrored
+  @test attractor_overlap(a, mirrored) == 1.0
+  @test attractor_overlap(a, g[1:100]) <= 100 / length(g)
+  @test attractor_overlap(a, Move[]) == 0.0
+end
+
+@testset "anti-attractor restarts keep the record and never re-accept near-copies" begin
+  s = SearchStats(rows=false)
+  Random.seed!(34)
+  cs = main(max_iterations=150_000, debug_interval=1000, end_search_interval=500, verbose=false,
+    initial_perms_size=10, stats=s, aa_stall=20_000, aa_overlap=0.9, window_cycle=8)
+  c = cs[1]
+  @test c.restarts >= 1 && length(s.aa_peaks) == c.restarts
+  @test c.record_score == maximum(vcat([length(p) for p in s.aa_peaks], [c.max_score]))
+  @test length(c.record_moves) == c.record_score
+  atts = Attractor.(s.aa_peaks)
+  codec = PackCodec()
+  # every perm accepted since the last restart stays clear of the earlier peaks
+  @test all(p -> all(a -> attractor_overlap(a, perm_moves(codec, p)) < 0.9, atts), c.perms)
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, aa_stall=-1)
+  @test_throws ArgumentError main(max_iterations=10, verbose=false, aa_overlap=0)
+end
