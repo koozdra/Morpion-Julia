@@ -30,6 +30,7 @@
 # 175 KyQihtyDUKLaq0EcpmqsRa/XuYvfN79c9T0t356/9+23fb5y/U
 # 176 CBMXT2TomgiXeiKtAo1lfo6C27939xsv7/PjOW+77/3pv/+3X
 # 176 FEBMv6lokkiL84GQw5LldzoifP3390p//WMfmu+6/f909//erg
+# 176 FxwYD6lkowlgzpUNRMGvHb67k5p/XDv2zjry8vX2r7/2l9//d9
 # 176 LoyBD5plSCpD5FoFqixU76aU8b7m9+5k/s+X6en2739dr7/+34
 # 177 0yAij1VlSSRWksIzgzcN9Zbvzv7q16+0Hffl2P7f/K53f/fXdg
 # 177 7EBET5ZlRiSWRsI5JTaVf7H1mb/z8Zf6mdnXZ7ntev+svX/vf0
@@ -41,6 +42,7 @@
 # 177 FEBMv6lokkiL84GQw9LndS5++33Kr9d8RvfNu/Nv/5zff/b3W
 # 177 FEBMv6lokkqKS4cwzB4f1Vc/fb7lr9d8RvfNu/Nv/p5vv/t7b
 # 177 FEBMv6lokkqKS4cwzBsf0ubovt9/yOd/M468fl18r1/el5/7/fA
+# 177 FxwYD6lkowlgzpULRkunnun8S/vn41v2zjrzc3dy3X/bHr/vv8
 # 177 IiAjf2jokjJLE4Zwyk4vWzYlXn77f1lf/be7tN7f/p5fv/t7X
 # 177 IiAjf2jokjJLE6eTC+plL+j5/o7/HO3qTxvV89vK9fvY+v+/3o
 # 177 IiAjf2jwkjJLE4ZwykwtXXP7+ur2prZ9ysuur49vK9fvaef+/3w
@@ -792,19 +794,21 @@ end
 window_floor(c::Candidate) = c.top - c.back_accept
 
 # Drops every perm picked taboo_visits times since its last accepted child and
-# puts its island on the taboo list, keeping at least the least visited perm;
-# then re-anchors the window on the best score left. Returns how many went.
-function taboo_exhausted!(c::Candidate, taboo_visits::Int)
+# puts its island on the taboo list; then re-anchors the window on the best
+# score left. The pool may end up empty: main then refills it (reheat from the
+# archive, or a fresh pool). Returns how many went, and appends the dropped
+# perms to `dropped` when given.
+function taboo_exhausted!(c::Candidate, taboo_visits::Int; dropped::Union{Nothing,Vector{Perm}}=nothing)
     taboo_visits > 0 || return 0
     n0 = length(c.perms)
-    keep = argmin(p -> p.visits, c.perms)
     filter!(c.perms) do p
-        (p.visits < taboo_visits || p === keep) && return true
+        p.visits < taboo_visits && return true
         delete!(c.index, p.moves_hash)
         push!(c.taboo, p.moves_hash)
+        dropped === nothing || push!(dropped, p)
         false
     end
-    c.top = min(c.max_score, maximum(p -> Int(p.score), c.perms))
+    isempty(c.perms) || (c.top = min(c.max_score, maximum(p -> Int(p.score), c.perms)))
     n0 - length(c.perms)
 end
 
@@ -942,6 +946,9 @@ mutable struct SearchStats
     es_from_queue::Int
     # perms dropped and islands tabooed by taboo_visits
     tabooed::Int
+    # pools emptied by the taboo and refilled: from the archive, or from scratch
+    taboo_reheats::Int
+    taboo_restarts::Int
     # anti-attractor restarts: (iteration, peak score) and the peak games
     aa_restarts::Vector{Tuple{Int,Int}}
     aa_peaks::Vector{Vector{Move}}
@@ -963,7 +970,7 @@ end
 
 SearchStats(; reject_sample::Int=1, rows::Bool=true, keep_es_sources::Bool=false) = SearchStats(Int32[], Float32[],
     Int32[], Int32[], UInt64[], Int32[], Int16[], Int16[], Int16[], Int8[], Int16[], Int16[], Int16[], Int16[], Int8[],
-    0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Tuple{Int,Int}[], Vector{Move}[], NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
+    0, 0, 0, NTuple{7,Int}[], Vector{Move}[], keep_es_sources, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Tuple{Int,Int}[], Vector{Move}[], NTuple{4,Int}[], NTuple{8,Float64}[], Dict{UInt64,Vector{Int16}}(),
     reject_sample, rows)
 
 # Step (1-based) at which each dna index first appears among the possible moves
@@ -1080,7 +1087,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # how often each pool is re-sorted for selection, and which orders are used:
     # :alternate (score order, then visits order, ...), :score or :visits
     sort_interval::Int=debug_interval,
-    sort_rotation::Symbol=:visits,
+    sort_rotation::Symbol=:alternate,
     # put each new best at the front of its pool instead of the back
     new_best_first::Bool=false,
     # keep up to this many pruned perms per candidate and put them back when the
@@ -1104,10 +1111,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # cycle going)
     window_schedule::Symbol=:timer,
     window_cycle::Int=128,
-    window_start::Int=10,
+    window_start::Int=5,
     # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
     # 1 narrows linearly, > 1 narrows fast and spends longer near the max
-    window_shape::Real=2,
+    window_shape::Real=1,
     # how the timer's steps are paced: 0 = every step lasts one maintenance
     # interval; d > 0 = step k lasts in proportion to k^d (the cycle still takes
     # window_cycle intervals), so more time is spent near the max
@@ -1250,6 +1257,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     eval_made = Move[]
     eval_values = UInt16[]
     modifications = Tuple{Int,Int}[]
+    taboo_dropped = Perm[]   # perms tabooed at the current maintenance step (verbose)
 
     iteration = 1
     start_time = time()
@@ -1389,7 +1397,8 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
             what = eval_moves_hash == perm.moves_hash ? "unchanged" :
                    eval_score > trace_max ? "new best" :
                    eval_score >= trace_floor ? (is_in_index ? "revisit" : "accepted") : "rejected"
-            println("$iteration. $perm_score ($trace_visits)")
+            # t: islands on the taboo list (when the taboo is on)
+            println("$iteration. $perm_score ($trace_visits)", taboo_visits > 0 ? " t:$(length(candidate.taboo))" : "")
         end
 
         if stats !== nothing && stats.rows && (stats_outcome != OUTCOME_REJECT || iteration % stats.reject_sample == 0)
@@ -1558,10 +1567,37 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
                     c.restarts += 1
                 end
                 if taboo_visits > 0
-                    n = taboo_exhausted!(c, taboo_visits)
+                    empty!(taboo_dropped)
+                    n = taboo_exhausted!(c, taboo_visits; dropped=verbose ? taboo_dropped : nothing)
                     stats === nothing || (stats.tabooed += n)
-                    verbose && n > 0 && println("$iteration. tabooed $n exhausted configurations (>= $taboo_visits visits): ",
-                        "taboo list $(length(c.taboo)), pool $(length(c.perms)), window from $(c.top) (max $(c.max_score))")
+                    # one line per tabooed island: its score (its visits)
+                    for p in taboo_dropped
+                        println("$iteration. t $(p.score) (max $(c.max_score))")
+                    end
+                    if isempty(c.perms)
+                        # every island left was exhausted: reheat early from the
+                        # archive, anchored on its best score; failing that, start
+                        # again from a fresh random pool (record and taboo kept)
+                        if !isempty(c.archive)
+                            c.top = min(c.max_score, maximum(p -> Int(p.score), c.archive))
+                            c.back_accept = c.window_start
+                            reintroduce_and_log!(c, iteration, verbose, stats)
+                        end
+                        if !isempty(c.perms)
+                            stats === nothing || (stats.taboo_reheats += 1)
+                            verbose && println("$iteration. taboo emptied the pool: reheated from the archive, ",
+                                "$(length(c.perms)) configurations from $(c.top)")
+                        else
+                            perms, index = fresh_pool()
+                            c.perms = perms
+                            c.index = index
+                            c.top = min(c.max_score, Int(perms[1].score))
+                            c.back_accept = c.window_start
+                            c.es_queue = ESQueue()
+                            stats === nothing || (stats.taboo_restarts += 1)
+                            verbose && println("$iteration. taboo emptied the pool and the archive: fresh pool from $(c.top)")
+                        end
+                    end
                 end
                 if window_schedule === :timer
                     # the window sweeps from window_start below the max to the max

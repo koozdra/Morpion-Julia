@@ -443,9 +443,18 @@ end
     close(io)
     readlines(path)
   end
-  # one "iteration. parent score (parent visits)" line per sample
+  # one "iteration. parent score (parent visits) t:taboo size" line per sample
   @test length(out) == 20_000 ÷ 100
-  @test all(l -> occursin(r"^\d+\. \d+ \(\d+\)$", l), out)
+  @test all(l -> occursin(r"^\d+\. \d+ \(\d+\) t:\d+$", l), out)
+  # without the taboo there's no t: field
+  plain = mktemp() do path, io
+    Random.seed!(31)
+    redirect_stdout(() -> main(max_iterations=2_000, debug_interval=1000, verbose=false, initial_perms_size=10,
+      trace=10, taboo_visits=0), io)
+    close(io)
+    readlines(path)
+  end
+  @test !isempty(plain) && all(l -> occursin(r"^\d+\. \d+ \(\d+\)$", l), plain)
   # off by default
   quiet = mktemp() do path, io
     Random.seed!(31)
@@ -530,12 +539,25 @@ end
   @test all(p -> (p.score == max_score) == (p.moves_hash in c.taboo), all_perms)
   @test c.top == maximum(p.score for p in c.perms) < max_score   # anchored on what's left
   @test c.max_score == max_score                                  # the record stays
-  # the pool never empties: the least visited perm stays
+  # it may empty the pool (main refills it)
   for p in c.perms; p.visits = 5_000; end
-  c.perms[1].visits = 4_000
-  taboo_exhausted!(c, 1_000)
-  @test length(c.perms) == 1 && c.perms[1].visits == 4_000
+  n = length(c.perms)
+  @test taboo_exhausted!(c, 1_000) == n && isempty(c.perms) && isempty(c.index)
   @test taboo_exhausted!(c, 0) == 0
+end
+
+@testset "a pool emptied by the taboo is refilled from the archive or from scratch" begin
+  s = SearchStats(rows=false)
+  Random.seed!(36)
+  cs = main(max_iterations=150_000, debug_interval=1000, end_search_interval=500, verbose=false,
+    initial_perms_size=10, stats=s, taboo_visits=50, window_cycle=8)
+  c = cs[1]
+  @test s.taboo_reheats + s.taboo_restarts > 0
+  @test !isempty(c.perms)
+  @test isempty(intersect(c.taboo, Set(keys(c.index))))
+  @test Set(keys(c.index)) == Set(p.moves_hash for p in c.perms)
+  @test c.top <= c.max_score
+  @test c.record_score >= c.max_score
 end
 
 @testset "main() with taboo_visits never brings a tabooed island back" begin
@@ -579,4 +601,19 @@ end
   @test all(p -> all(a -> attractor_overlap(a, perm_moves(codec, p)) < 0.9, atts), c.perms)
   @test_throws ArgumentError main(max_iterations=10, verbose=false, aa_stall=-1)
   @test_throws ArgumentError main(max_iterations=10, verbose=false, aa_overlap=0)
+end
+
+@testset "verbose prints one line per tabooed island" begin
+  out = mktemp() do path, io
+    Random.seed!(35)
+    redirect_stdout(io) do
+      main(max_iterations=60_000, debug_interval=1000, print_interval=1000, initial_perms_size=10, taboo_visits=200)
+    end
+    close(io)
+    readlines(path)
+  end
+  lines = filter(l -> occursin(r"^\d+\. t \d+ \(max \d+\)$", l), out)
+  @test !isempty(lines)
+  # a tabooed island never scores above the max
+  @test all(l -> (m = match(r"t (\d+) \(max (\d+)\)", l); parse(Int, m[1]) <= parse(Int, m[2])), lines)
 end

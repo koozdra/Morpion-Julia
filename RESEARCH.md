@@ -57,14 +57,14 @@ Defaults as of 2026-10-13:
 | `num_modifications`, `min_modifications` | 10, 2 | 2–10 swaps per mutation, uniform |
 | `default_back_accept` | 10 | was 3 in late September |
 | `selection_skew` | 10 | `rand()^10` over the sorted pool |
-| `sort_rotation` | `:visits` | the pool is re-sorted by fewest visits only (the score-ordered phase was redundant under the timer); was `:alternate` until 2026-10-08 |
-| `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 10 | the window narrows from `window_start` below the max to the max over 128 maintenance intervals (as (1 − k/128)^`window_shape`, shape set by the user: 1.7 on 2026-10-15, 2 on 2026-10-23) (12.8M iterations), then resets wide; timer since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)); `window_start` 20 → 10 on 2026-10-09 (10–25 is a plateau, below 10 traps runs as a fixed value). `window_adapt` (adaptive step back) on since 2026-10-10, ±1 within 0–30 per cycle, starting from `window_start`. On 2026-10-14 the user set `window_start` 10 → 5 (back to 10 on 2026-10-23), step ±2 → ±1 and `window_adapt_min` 1 → 0; the target is 10,000 configurations per cycle since 2026-10-16 (50,000 before, briefly 5,000); none A/B tested |
+| `sort_rotation` | `:alternate` | re-sorts alternate between fewest visits and score-then-visits; `:visits` from 2026-10-08 (the A/B found it equivalent), back to `:alternate` by the user on 2026-10-25 (not A/B tested since) |
+| `window_schedule`, `window_cycle`, `window_start` | `:timer`, 128, 5 | the window narrows from `window_start` below the max to the max over 128 maintenance intervals (as (1 − k/128)^`window_shape`, shape set by the user: 1.7 on 2026-10-15, 2 on 2026-10-23, 1 (linear) on 2026-10-25) (12.8M iterations), then resets wide; timer since 2026-10-08 (see [Escape settings](#escape-settings-and-a-timer-driven-window-2026-10-08-timer-128-adopted-default-since-2026-10-08)); `window_start` 20 → 10 on 2026-10-09 (10–25 is a plateau, below 10 traps runs as a fixed value). `window_adapt` (adaptive step back) on since 2026-10-10, ±1 within 0–30 per cycle, starting from `window_start`. On 2026-10-14 the user set `window_start` 10 → 5 (10 again on 2026-10-23, 5 on 2026-10-25), step ±2 → ±1 and `window_adapt_min` 1 → 0; the target is 10,000 configurations per cycle since 2026-10-16 (50,000 before, briefly 5,000); none A/B tested |
 | `idle_reset` / `improvement_step_up` | 32 / 10 | only used with `window_schedule=:counters` (was 512 / 10000 on 2026-10-02, 128 / 100 on 2026-10-04) |
 | `initial_perms_size` | 100 | random perms each candidate starts with |
 | `end_search_interval` | 5,000 | iterations between end_search calls, about 20% of time in end_search (was 10,000 until 2026-10-11) |
 | `es_when_all_searched` | `:random` | when every perm of the chosen candidate has been end-searched, search a random one again (was `:skip` until 2026-10-13; chosen by the user although the A/B measured −2.9 [−5.9, −0.1], see [Repeating end_search](#repeating-end_search-when-the-whole-pool-has-been-searched-2026-10-11-random-rejected-in-the-ab-made-the-default-on-2026-10-13-by-the-users-choice-best-null)) |
 | `es_queue_size` | 100,000 | every new best, accepted child, island line change and end_search result entering the pool (since 2026-10-21) is queued as a snapshot for end_search; each slot takes the best unsearched snapshot at or above the window floor when it scores at least the pool's best (since 2026-10-16; not A/B tested) |
-| `taboo_visits` | 500,000 | set by the user on 2026-10-23; 100k gave +1.9 and 1M −0.1 in a 2-hour A/B (500k not tested), see [Taboo list for exhausted islands](#taboo-list-for-exhausted-islands-2026-10-23-100k-positive-19-significant-over-8-seeds-not-yet-the-default-1m-null) |
+| `taboo_visits` | 100,000 | set by the user (500k on 2026-10-23, 100k on 2026-10-25); 100k gave +1.9 and 1M −0.1 in a 2-hour A/B; a pool emptied by the taboo is refilled from the archive or a fresh pool (2026-10-24), see [Taboo list for exhausted islands](#taboo-list-for-exhausted-islands-2026-10-23-100k-positive-19-significant-over-8-seeds-not-yet-the-default-1m-null) |
 | `aa_stall`, `aa_overlap` | 0 (off), 0.95 | anti-attractor restarts, under test since 2026-10-23, see [Anti-attractor restarts](#anti-attractor-restarts-2026-10-23-measured-open-restarts-sample-new-regions-but-high-peaks-land-in-known-families) |
 | `es_searched_key` | `:lines` | end_search remembers what it searched by the island's current line set, not its dots, so an island is searched again once its lines drift (since 2026-10-14; not A/B tested) |
 | `es_step_back_fraction` | 0.4 | end_search unwinds up to 40% of the source game (was 0.25 until 2026-10-11) |
@@ -303,6 +303,7 @@ A/B: 2-hour runs × 8 paired seeds (3401–3408), current defaults; off vs 100k 
 - **1M is too lenient:** about 70 islands per run, no effect on the mean.
 - **The taboo didn't free stuck runs:** seed 3402 stuck near 121 in every arm.
 - **Caveat:** 8 seeds of 2 hours; the user's target is 24-hour runs, where a taboo list keeps growing (about 290 islands an hour at 100k).
+- **Recovery when the pool empties (2026-10-24):** the first version never tabooed the last perm, so pools sat at a single, ever more visited perm (7% of maintenance steps in a 4-minute check; the last perm reached ~58k visits). Now the taboo may empty the pool, and the same maintenance step refills it: an early reheat from the archive, anchored on the best archived score, with the window reopened to the step back (tabooed islands stay out); if the archive has nothing usable, a fresh random pool (record and taboo list kept). `SearchStats` counts `taboo_reheats` and `taboo_restarts`. Same check after the change: 1 of 206 steps at a single perm, 2 reheats, no restarts.
 - **New games:** three different **170**s on seed 3401, one per arm (`ACcjTcaQdQpRHil1eKYW…`, `ACcjTcaQdQpRHil1dKYW…`, `ACcjTcaQeQpVEsEQ…`); on seed 3408 a **176** with the taboo off (`CBMXT2TomgiXeiKtAo1l…`) and a **178** in each taboo arm (`CBMXT2TomgiXeiKNAlJF…` at 1M, `CBMXT2TomgiXeiKNAhJF…` at 100k). Both 178s have exactly the dots of the header's `CBMXT2Tomgi…` and `FxwYD6lk…` 178s, with 171–175 of 178 lines shared: new line versions of that island. All added to the header of `population.jl`.
 
 ### `initial_perms_size` (2026-09-28): **Open**
@@ -697,6 +698,26 @@ Runs: 4 hours × 4 seeds (3501–3504), off vs `aa_overlap` 0.95 vs 0.90, `aa_st
 - **The records are too few to compare** (4 seeds; 0.90's lead comes from the 175).
 - **Next:** seed the attractor list with all known 170+ families from the header, so runs must find something else; and the forest search (many roots, UCB over each root's tree of useful modifications) for diversity by structure.
 - **New games:** **175** `HEJFVwzx…` (0.90, seed 3503; a reorientation of `KyQihtyDUKLaq0Ec…`), **171** `AYOOj1VxKGGimNoZ…` (0.95, seed 3504), **170** `EykgD3A04NJBWojj…` (off, seed 3501; same dots as the header's `Ey0gDuBp…` and `EykgD3Iy…` 170s); added to the header of `population.jl`.
+
+### Forest search: many roots, a tree of useful modifications each (2026-10-24): **Rejected** for best score; more distinct families per run
+`forest.jl` (the user's idea): instead of one pool, keep many root games, each growing a tree in which useful modifications become children. Every iteration walks down from a root with UCB, choosing at each node between modifying it and descending into a child, so effort follows lines that improved before; a root whose tree is finished is replaced by a fresh random one. Ingredients that turned out necessary:
+
+- **Progressive widening:** children kept sorted by score; a node walked n times considers only its best 1 + √n children (otherwise unexplored children always win and the trees only grow sideways).
+- **A per-root acceptance window:** a child is useful only if it is a new island within `window` of its root's best score; subtrees below their root's window are buried. Accepting relative to the parent instead (sideways or up) gave no pressure to climb: weak games improve on almost every mutation, so trees sprawled into millions of never-modified nodes and reached only 89–103 in 3 minutes.
+
+3-minute trials (32 roots; the pool search is at ~150 by then): window 3 and 5 both reached 151, with work spread evenly over the roots (the busiest root got 5–9% of walks); window 10 reached 130.
+
+2 hours × 8 paired seeds (3601–3608), one core each, against the pool search (defaults of 2026-10-23):
+
+| Arm | Best per seed | Mean (median) | vs pool [95%] | Better / worse | Roots ≥ 160 per run | Median root best | Roots ≥ 155 / distinct families among them, per run |
+|---|---|---|---|---|---|---|---|
+| pool | 164 158 158 166 176 160 177 162 | 165.1 (163) | — | — | — | — | — |
+| forest, window 3 | 157 157 160 158 159 156 158 160 | 158.1 (158) | −7.0 [−12.0, −2.5] | 1 / 7 | 0–1 | 143.5–148 | 2–11, all distinct but one |
+| forest, window 5 | 157 167 159 157 159 167 160 159 | 160.6 (159) | −4.5 [−11.0, +2.0] | 3 / 5 | 0–1 | 145–150 | 1–5, all distinct |
+
+- **Worse for the best score:** splitting one core over 32+ lineages leaves each root climbing slowly (median root best 145–150 after 2 hours), and the walk costs throughput (41–52k walks/s against ~70k iterations/s).
+- **But diverse:** a single forest run holds several distinct families at 155+ at once (up to 10), where a pool run holds one. Whether that diversity pays off needs far more time per root, i.e. long runs or many cores.
+- **New games (pool arm):** **177** `FxwYD6lkowlgzpUL…` (seed 3607) and **176** `FxwYD6lkowlgzpUN…` (seed 3605), both inside Rosin's family; added to the header of `population.jl`.
 
 ## Performance
 

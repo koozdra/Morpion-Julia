@@ -68,7 +68,7 @@ Each candidate keeps a **pool** of distinct configurations. A configuration is i
 
 Every iteration:
 
-1. **Pick a parent.** The pool is ordered by fewest visits. The parent's position is drawn as `rand()^selection_skew` with skew 10, which strongly favours the front of the pool.
+1. **Pick a parent.** Every 100,000 iterations the pool is re-sorted, alternating between fewest visits first and highest score first (`sort_rotation=:alternate`). The parent's position is drawn as `rand()^selection_skew` with skew 10, which strongly favours the front of the pool.
 2. **Mutate it and roll the child out.**
 3. **Accept or reject the child.**
    - A child that beats the best score is the new best.
@@ -78,7 +78,7 @@ Every iteration:
 
 ```mermaid
 flowchart TD
-    A["Pick a parent: position rand()^10 in the pool, ordered by fewest visits"] --> B["Decode its game, rebuild a policy, swap 2 to 10 priority pairs"]
+    A["Pick a parent: position rand()^10 in the pool, sorted by fewest visits or by score"] --> B["Decode its game, rebuild a policy, swap 2 to 10 priority pairs"]
     B --> C["Greedy rollout: the child game"]
     C --> D{"Child's score"}
     D -- "above the best" --> E["New best: joins the pool"]
@@ -93,12 +93,12 @@ flowchart TD
 
 The acceptance window plays the role of the annealing temperature: how far below the best a configuration may score and still be kept. With `window_schedule=:timer` it follows a fixed schedule:
 
-- **Cooling:** over a cycle of 128 maintenance intervals (each 100,000 iterations), the window narrows from `window_start` (10) below the best down to the best itself, following `window_start × (1 − k/128)^window_shape` (shape 2). The search starts each cycle exploring broadly and ends it concentrating on the best islands.
+- **Cooling:** over a cycle of 128 maintenance intervals (each 100,000 iterations), the window narrows from `window_start` (5) below the best down to the best itself, following `window_start × (1 − k/128)^window_shape` (shape 1, so linearly). The search starts each cycle exploring broadly and ends it concentrating on the best islands.
 - **Pruning into the step-back cache:** as the window narrows, configurations that fall below it are moved out of the pool into an **archive** (up to 1,000,000 perms). Children that score below the current window but would fit the next, wider one are archived as well (`archive_rejects`).
 - **Reheating:** at the end of a cycle the window reopens to `window_start`, and every archived configuration inside it goes back into the pool.
 - **Adaptive step back:** after each cycle, `window_start` widens by 1 if the cycle produced fewer than `window_adapt_target` new configurations, and narrows by 1 otherwise (within 0–30).
 
-![Acceptance window over three timer cycles: each cycle starts at the step back (10, then 11, then 10), narrows as (1 − k/128)² to the best score, then reheats](docs/window-schedule.svg)
+![Acceptance window over three timer cycles: each cycle starts at the step back (5, then 6, then 5), narrows linearly to the best score, then reheats](docs/window-schedule.svg)
 
 ```mermaid
 flowchart LR
@@ -153,12 +153,12 @@ All options are keyword arguments of `main`. The defaults are the current tuned 
 | Group | Options (default) |
 |---|---|
 | Budget and output | `max_iterations` (none), `max_seconds` (none), `verbose` (true), `trace` (0), `stats` (`nothing`), `debug_interval` (100,000), `print_interval` (100,000) |
-| Mutation and selection | `min_modifications`/`num_modifications` (2/10), `selection_skew` (10), `sort_rotation` (`:visits`), `initial_perms_size` (100) |
-| Annealing window | `window_schedule` (`:timer`), `window_cycle` (128), `window_start` (10), `window_shape` (2), `window_dwell` (0), `window_adapt` (true), `window_adapt_target` (10,000), `window_adapt_step` (1), `window_adapt_min`/`window_adapt_max` (0/30) |
+| Mutation and selection | `min_modifications`/`num_modifications` (2/10), `selection_skew` (10), `sort_rotation` (`:alternate`), `initial_perms_size` (100) |
+| Annealing window | `window_schedule` (`:timer`), `window_cycle` (128), `window_start` (5), `window_shape` (1), `window_dwell` (0), `window_adapt` (true), `window_adapt_target` (10,000), `window_adapt_step` (1), `window_adapt_min`/`window_adapt_max` (0/30) |
 | Archive (step-back cache) | `archive_size` (1,000,000), `archive_rejects` (true) |
 | end_search | `end_search_interval` (5,000), `es_mode` (`:ucb_then_mast`), `es_step_back_fraction` (0.4), `es_ucb_stall_rollouts`/`es_mast_stall_rollouts` (2,000/500), `es_queue_size` (100,000), `es_searched_key` (`:lines`), `es_when_all_searched` (`:random`) |
 | Storage | `pack_cache_size` (16,384 decoded games kept), `config_key` (`:points`) |
-| Taboo | `taboo_visits` (500,000): an island picked that many times since its last accepted child is dropped for good |
+| Taboo | `taboo_visits` (100,000): an island picked that many times since its last accepted child is dropped for good; if that empties the pool, it is refilled from the archive (an early reheat) or, failing that, from a fresh random pool |
 | Experimental, off by default | `aa_stall` / `aa_overlap` (0 / 0.95): anti-attractor restarts away from previously reached peaks |
 
 ## What a run prints
@@ -177,8 +177,9 @@ It also prints lines for new bests (`######`), accepted children, end_search res
 |---|---|
 | [`population.jl`](population.jl) | The search: policies, mutation, pool and acceptance window, timer schedule, archive, end_search and its queue, packed storage, instrumentation (`SearchStats`), and the list of recorded games |
 | [`morpion.jl`](morpion.jl) | The engine: board, line generation and incremental move updates (`make_move`), greedy policy rollout (`eval_dna_and_hash!`), points and lines hashing, and the pack text format (`generate_pack`, `unpack_pack`) |
+| [`forest.jl`](forest.jl) | An experimental alternative to the pool: many root games, each growing a tree of useful modifications, with a UCB walk choosing what to modify. Reaches more distinct families per run but lower best scores than the pool search; see RESEARCH.md |
 | [`RESEARCH.md`](RESEARCH.md) | The research log, described below |
-| [`test/`](test/) | Tests for the engine, policies, encodings, end_search (including recall against exhaustive enumeration), the search's options, and a check that `main` keeps no boxed variables. Run with `julia --project=. test/runtests.jl` |
+| [`test/`](test/) | Tests for the engine, policies, encodings, end_search (including recall against exhaustive enumeration), the search's options, the forest search, and a check that `main` keeps no boxed variables. Run with `julia --project=. test/runtests.jl` |
 | `tune.jl`, `tune_end_search.jl` | Hyperparameter search harnesses (September 2026) |
 | `basic.jl`, `genetic.jl`, `perm.jl`, `deriv.jl`, `effy.jl`, `l.jl`, `new.jl`, `q.jl`, `state.jl`, `runner.jl` | Earlier experiments that predate `population.jl` |
 

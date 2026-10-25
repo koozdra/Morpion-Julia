@@ -8,6 +8,7 @@ using DataStructures
 # population.jl pulls in morpion.jl; its main() only runs when the file is the
 # program entry point, so including it here just loads definitions.
 include(joinpath(@__DIR__, "..", "population.jl"))
+include(joinpath(@__DIR__, "..", "forest.jl"))
 
 include("helpers.jl")
 
@@ -31,6 +32,9 @@ Random.seed!(20260912)
   end
   @testset "population search driver" begin
     include("test_population.jl")
+  end
+  @testset "forest search" begin
+    include("test_forest.jl")
   end
   @testset "performance guardrails" begin
     include("test_perf.jl")
