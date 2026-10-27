@@ -1154,7 +1154,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # accepted child leaves the pool and its island is never accepted again (by
     # children, end_search, the archive or the end_search queue); the window then
     # hangs from the best island left if every island at the max is gone. 0 = off
-    taboo_visits::Int=500_000,
+    taboo_visits::Int=0,
     # anti-attractor: > 0 = when a candidate's max hasn't risen for this many
     # iterations, its best game becomes an attractor and the candidate restarts
     # from a fresh random pool (keeping its record); from then on any game that
