@@ -1056,7 +1056,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     num_modifications::Int=10,
     min_modifications::Int=2,
     default_back_accept::Int=10,
-    selection_skew::Real=10,
+    selection_skew::Real=4,
     move_selection_skew::Real=1,
     idle_reset::Int=32,
     idle_reset_step_back::Int=default_back_accept,
@@ -1111,10 +1111,10 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # cycle going)
     window_schedule::Symbol=:timer,
     window_cycle::Int=128,
-    window_start::Int=5,
+    window_start::Int=10,
     # shape of the timer sweep: back_accept = window_start * (1 - k/window_cycle)^window_shape;
     # 1 narrows linearly, > 1 narrows fast and spends longer near the max
-    window_shape::Real=1,
+    window_shape::Real=2,
     # how the timer's steps are paced: 0 = every step lasts one maintenance
     # interval; d > 0 = step k lasts in proportion to k^d (the cycle still takes
     # window_cycle intervals), so more time is spent near the max
@@ -1154,7 +1154,7 @@ function main(; max_iterations::Union{Nothing,Int}=nothing,
     # accepted child leaves the pool and its island is never accepted again (by
     # children, end_search, the archive or the end_search queue); the window then
     # hangs from the best island left if every island at the max is gone. 0 = off
-    taboo_visits::Int=0,
+    taboo_visits::Int=1_000_000,
     # anti-attractor: > 0 = when a candidate's max hasn't risen for this many
     # iterations, its best game becomes an attractor and the candidate restarts
     # from a fresh random pool (keeping its record); from then on any game that
